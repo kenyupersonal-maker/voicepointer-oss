@@ -1,0 +1,51 @@
+// 液态金属：一滴会动的液态金属。说话时整颗一弹一弹、表面荡起细浪，反光跟着流动。
+// 往上推，平滑鼓成朝上的圆角三角；往下推，收成一颗扁药丸（形状见 common.hsl 的 drop_sdf）。
+// 光：被指向的 Send / Cancel 是一盏灯（common.hsl 的 aim_light / lamp_terms / page_light）。
+// 它照亮金属朝向它的一面：锐利高光、更大的柔光和边缘光，灯越亮高光越大；同时照亮灯周围的页面，
+// 金属挡住的那一侧没有灯光。不再画浮在上面的扇形光。
+
+vec3 lm_band(float f) {
+    float x = fract(f);
+    float dark = smoothstep(0.46, 0.52, x) * (1.0 - smoothstep(0.70, 0.86, x));
+    float grey = smoothstep(0.10, 0.46, x) * (1.0 - smoothstep(0.52, 0.56, x));
+    vec3 c = vec3(0.94, 0.95, 0.97);
+    c = mix(c, vec3(0.70, 0.73, 0.78), 0.65 * grey);
+    c = mix(c, vec3(0.07, 0.08, 0.13), dark);
+    return c;
+}
+
+vec4 skin_liquidmetal(vec2 p, UARG u) {
+    vec4 st = drop_state(u);
+    float cy = drop_centerY(st);
+    float d = drop_sdf(p, st, u);
+    float S = u.send, C = u.cancel;
+    vec4 back = page_light(p, st, 0.0, u);
+    if (d > 3.0) return back * (1.0 - u.fade);
+    float z = drop_z(p, st, u);
+    vec3 n = drop_normal(p, st, u);
+    float e = -d;
+    float ph = u.phase;
+    // chrome: bands follow the surface slope (so voice waves make the reflections ripple) and drift slowly
+    float flow = gnoise(p / 24.0 + vec2(0.16 * ph, -0.11 * ph)) + 0.45 * gnoise(p / 13.0 - vec2(0.09 * ph, 0.13 * ph));
+    float f = 1.25 * (1.0 - n.z) + 0.75 * flow * (1.0 - 0.85 * n.z) - 0.30 * n.y - 0.18 * n.x + 0.12;
+    vec3 col = vec3(lm_band(f + 0.022).r, lm_band(f).g, lm_band(f - 0.030).b);
+    // studio key light from the top-left: soft highlight + a crisp glint
+    vec3 key = normalize(vec3(-0.45, 0.62, 0.64));
+    float nk = max(dot(n, normalize(key + vec3(0.0, 0.0, 1.0))), 0.0);
+    col = mix(col, vec3(1.0), saturate(0.35 * pow(nk, 18.0) + 0.9 * pow(nk, 160.0)));
+    // contact darkening right at the silhouette
+    col = mix(col, vec3(0.08, 0.09, 0.13), 0.60 * exp(-pow((e - 1.1) / 0.9, 2.0)));
+    // the lamp: reflected into the metal on the side that faces it
+    vec2 al = aim_light(u);
+    vec3 lc = aim_color(al.x);
+    vec3 lt = lamp_terms(p, z, n, u);
+    // a mirror shows the lamp's colour where it reflects the lamp: replace, don't add (adding to white clips)
+    float w = saturate(lt.x + 1.6 * lt.y + lt.z);
+    vec3 lampRefl = lc * (0.55 + 0.45 * saturate(lt.x)) + vec3(0.9) * saturate(lt.x - 0.6);
+    col = mix(col, lampRefl * (0.85 + 0.15 * luma(col)), w * 0.9);
+    col = saturate(col);
+    float a = cover(d, u);
+    a *= 1.0 - smoothstep(0.55, 0.95, S);
+    a *= 1.0 - smoothstep(0.85, 1.0, C);
+    return over(vec4(col * a, a), back) * (1.0 - u.fade);
+}

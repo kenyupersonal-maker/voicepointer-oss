@@ -1,0 +1,15 @@
+;; OpenAI models component. The launcher fixes provider=openai. The code allowlist
+;; is api.openai.com only, rejects redirects; no OS hostname filter is claimed.
+(version 1)
+(allow default)
+(deny file-write*)
+(allow file-write* (literal "/dev/null"))
+(deny file-read-data)
+(allow file-read-data
+ (literal "/") (subpath (param "BACKEND_ROOT")) (subpath (param "ASSET_ROOT"))
+ (subpath "/System/Library") (subpath "/System/Cryptexes/OS/System/Library/dyld")
+ (subpath "/System/Volumes/Preboot/Cryptexes/OS/System/Library/dyld")
+ (subpath "/usr/lib") (subpath "/usr/share") (subpath "/private/etc")
+ (subpath "/private/var/db/dyld") (literal "/dev/null")
+ (literal "/dev/random") (literal "/dev/urandom"))
+(deny network-inbound)

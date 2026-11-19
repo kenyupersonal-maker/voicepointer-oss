@@ -1,0 +1,45 @@
+;; Ali realtime worker sandbox profile (seatbelt).
+;; Network egress is allowed to allowlisted endpoints only; the endpoint
+;; allowlist itself is validated in Swift (see AliEndpoint) — this profile does
+;; not claim any OS-level hostname filtering.
+
+(version 1)
+(allow default)
+
+;; No writes anywhere, except the harmless /dev/null sink.
+(deny file-write*)
+(allow file-write* (literal "/dev/null"))
+
+;; Reads: system root, backend bundle resources, system libraries, config,
+;; and device randomness. No home directory, no App Support, no Keychain,
+;; no assetroot, no seed material.
+(deny file-read-data)
+(allow file-read-data
+    (literal "/")
+    (subpath (param "BACKEND_ROOT"))
+    (literal "/System/Library")
+    (subpath "/System/Library")
+    (literal "/System/Cryptexes/OS/System/Library/dyld")
+    (subpath "/System/Cryptexes/OS/System/Library/dyld")
+    (literal "/System/Volumes/Preboot/Cryptexes/OS/System/Library/dyld")
+    (subpath "/System/Volumes/Preboot/Cryptexes/OS/System/Library/dyld")
+    (literal "/usr/lib")
+    (subpath "/usr/lib")
+    (literal "/usr/share")
+    (subpath "/usr/share")
+    (literal "/private/etc")
+    (subpath "/private/etc")
+    (literal "/private/var/db/dyld")
+    (subpath "/private/var/db/dyld")
+    (literal "/dev/null")
+    (literal "/dev/random")
+    (literal "/dev/urandom"))
+
+;; No inbound network connections.
+(deny network-inbound)
+
+;; Outbound network is allowed: the specific endpoint allowlist is enforced
+;; in Swift by AliEndpoint validation; no OS-level host filter is claimed
+;; here.;;
+;; (Outbound allowed per (allow default) above.)
+

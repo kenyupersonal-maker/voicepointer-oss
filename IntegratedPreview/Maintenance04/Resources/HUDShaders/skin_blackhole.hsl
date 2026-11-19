@@ -1,0 +1,441 @@
+// ---- Black hole (product, parametrised). Parameters are PARAM_F / PARAM_V3: Metal function constants in the app (index =
+//      constant id, see skin_params.json), uniforms of the same name in the WebGL tuning page. Helpers are prefixed bh_ so this
+//      file can share one Metal library with skin_astra.hsl. With the manifest defaults the skin looks exactly like the old one. ----
+// 暗场（背后那团暗星云）
+PARAM_F(bhRadius, 32)      // 浅色背景下的半径 pt（深色 +4）
+PARAM_F(bhHard, 33)        // 边缘衰减指数：小 = 柔和，大 = 利落（3.5）
+PARAM_F(bhCore, 34)        // 中心浓度 0.5–1
+PARAM_F(bhWisp, 35)        // 螺旋丝缕让边缘起伏的幅度（0.15）
+PARAM_F(bhFlow, 36)        // 丝缕转动的快慢（1）
+PARAM_V3(bhColor, 37)      // 浅色背景下的暗场底色（深色 x 0.1）
+// 边缘颗粒
+PARAM_F(bhGrain, 38)       // 0 = 原来的柔和边，1 = 全是细颗粒
+PARAM_F(bhGrainSize, 39)   // 颗粒格子大小 pt（0.4–3）
+PARAM_F(bhGrainDrift, 40)  // 颗粒往外缓缓飘 0–1
+// 暗金光
+PARAM_F(bhGlow, 41)        // 暗场变淡那一圈的暖光（浅色背景；深色 x 3.2）
+PARAM_V3(bhGlowColor, 42)  // 那圈光的颜色（原来是 bh_ramp(0.72)）
+PARAM_F(bhDust, 43)        // 盘上甩出的火星 0–2（<= 0.001 时整个循环跳过）
+// 星空底纹
+PARAM_F(bhStarDensity, 44) // 8pt 格子里有星星的比例（0.2）
+PARAM_F(bhStarBright, 45)  // 星星亮度（0.45）
+PARAM_F(bhStarBlue, 46)    // 0 = 暖白，0.5 = 原来的随机蓝暖混色，1 = 蓝白
+PARAM_F(bhTwinkle, 47)     // 闪烁 0–1（0.3 = 原来的 0.70 + 0.30 sin）
+PARAM_F(bhStarDrift, 48)   // 星空绕黑洞缓缓转动 0–1（0 = 不动）
+// 吸积盘（和 Astra 同一套）
+PARAM_F(bhDiskBright, 49)  // 盘 + 光子环 + 辉光的总亮度 0.6–2（1）
+PARAM_F(bhDiskSat, 50)     // 盘的饱和度 0–2（1 = 不变）
+PARAM_F(bhDiskHeat, 51)    // 0 = 原来的金色渐变，1 = 白热 → 淡黄 → 橙 → 深红（0）
+
+// 黑洞：《星际穿越》Gargantua 式的黑洞（全部在平面上解析地算，不做光线追踪）。
+// - 阴影：黑色圆（半径 Rs），边上一圈极细的光子环；外面是一小片柔和的深空，里面的星星被引力拉成小弧。
+// - 吸积盘：薄盘几乎侧对着我们（sin 倾角 = SI）。近半边直接投影，从阴影前面横穿过去；
+//   远半边在黑洞后面，光被弯折：点质量透镜 β = θ(1 − θE²/|θ|²)，θE² = K·(光源在黑洞后面的深度)，
+//   于是远半边拱到阴影上方成一道粗弧，阴影下方还有一道细弧（次像，左右是反的）。这个映射有解析解。
+// - 盘面：内圈白热 → 金 → 橙 → 外圈红；朝我们转过来的左侧更亮更白（多普勒增亮）；
+//   沿轨道拉长的细条纹 + 同心细环，内圈转得快、外圈慢（两层交替，不会越卷越密）；
+//   纹理按屏幕像素大小自动去掉过细的频率，不闪。
+// - 说话：转得更快、更亮，有往里收的亮波；引力一呼一吸，光弧跟着胀缩，光子环随音节闪。
+// - 指向 Send：上方光弧的中间被甩出一道光舌伸向 Send，用盘面自己的颜色（不再有绿色光柱）。
+//   发送：整条光带被甩上去，黑洞收成一点。
+// - 指向 Cancel：黑色阴影本身往下被挤出一滴，伸向 Cancel，光子环和下方细弧绕着它走。
+//   撤回：黑色张开把光吞掉，再收成一点，最后闪一下。
+// - 背后没有"黑盘子"（2026-09-29）：黑洞坐在一团暗星云里，中间浓、往外沿着慢慢转的螺旋丝缕变淡，
+//   没有边；盘上甩出的尘埃火星沿螺线往外飘，由金变红，散进页面里。
+// - 可选的额外效果（上面的 PARAM；默认值下和原版一模一样，浅深色、所有状态逐像素差 <= 1/255）：
+//   边缘颗粒 bhGrain：暗场的边不再是柔和的渐变，而是极细的颗粒（抖动网格里的小圆点，用像素大小 1 / u.scale 抗锯齿）：
+//   往里越来越密、连成实心，往外越来越稀；点的半径随密度变大，所以里面没有洞；颗粒在点空间里是稳定的，bhGrainDrift 让它
+//   缓缓往外飘（两层交叉淡入，循环无缝）；颜色留在暗金一族：近黑、暖棕，外加少量淡金色的点，绝不带蓝。
+//   星空底纹：星星的密度 / 亮度 / 冷暖 / 闪烁，bhStarDrift 让整片星空绕黑洞慢慢转（和 Astra 的 starDrift 同一个办法）；
+//   亮度超过原版时，亮星会变大、带一圈淡金色的光晕。
+//   颜色：暗场底色、边缘暖光的颜色；盘面的亮度 / 饱和度 / 色温（bhDiskBright / Sat / Heat，和 Astra 的 diskBright / Sat / Heat 一样）。
+//   开销：颗粒只在暗场里 0 < 密度 < 1 的像素上算，每层最多查 2×2 个格子（带漂移时两层）；星星只在暗场里算；
+//   bhDust <= 0.001 时整个火星循环跳过；用不到的功能在 Metal 里被 function constant 折叠掉。
+
+// gradient noise, periodic in x with an integer period P (for seamless azimuth)
+float bh_pn(vec2 p, float P) {
+    vec2 i = floor(p); vec2 f = fract(p);
+    vec2 w = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    float x0 = mod(i.x, P), x1 = mod(i.x + 1.0, P);
+    vec2 ga = hash22(vec2(x0, i.y)) * 2.0 - 1.0, gb = hash22(vec2(x1, i.y)) * 2.0 - 1.0;
+    vec2 gc = hash22(vec2(x0, i.y + 1.0)) * 2.0 - 1.0, gd = hash22(vec2(x1, i.y + 1.0)) * 2.0 - 1.0;
+    float va = dot(ga, f), vb = dot(gb, f - vec2(1.0, 0.0)), vc = dot(gc, f - vec2(0.0, 1.0)), vd = dot(gd, f - vec2(1.0, 1.0));
+    return mix(mix(va, vb, w.x), mix(vc, vd, w.x), w.y);
+}
+
+// disk colour, x: 0 = hottest (inner, approaching) … 1 = coolest (outer).
+// bhDiskHeat 0 = the old gold ramp; 1 = black-body-like: a wide white-hot core, pale yellow, orange, deep red at the rim
+// (the argument is bent towards the hot end first, so that the white-hot zone gets wider). Same as as_ramp in skin_astra.
+vec3 bh_ramp(float x) {
+    x = saturate(x);
+    vec3 c = vec3(0.0);
+    if (bhDiskHeat < 0.999) {
+        c = mix(vec3(1.00, 0.97, 0.90), vec3(1.00, 0.80, 0.44), smoothstep(0.00, 0.30, x));
+        c = mix(c, vec3(1.00, 0.53, 0.15), smoothstep(0.25, 0.65, x));
+        c = mix(c, vec3(0.92, 0.25, 0.06), smoothstep(0.60, 1.00, x));
+    }
+    if (bhDiskHeat > 0.001) {
+        float y = x * (1.0 - 0.3 * bhDiskHeat * (1.0 - x));
+        vec3 b = mix(vec3(1.00, 0.97, 0.92), vec3(1.00, 0.88, 0.52), smoothstep(0.06, 0.26, y));
+        b = mix(b, vec3(1.00, 0.56, 0.14), smoothstep(0.22, 0.44, y));
+        b = mix(b, vec3(0.94, 0.28, 0.06), smoothstep(0.40, 0.70, y));
+        b = mix(b, vec3(0.74, 0.12, 0.03), smoothstep(0.66, 1.00, y));
+        c = bhDiskHeat > 0.999 ? b : mix(c, b, bhDiskHeat);
+    }
+    return c;
+}
+
+// saturation around the luma (s = 1 leaves the colour alone)
+vec3 bh_sat(vec3 c, float s) {
+    float l = luma(c);
+    return max(vec3(l) + (c - vec3(l)) * s, vec3(0.0));
+}
+
+// fade an octave out once its cells get smaller than ~2 px on screen (n = cells per pixel)
+float bh_aa(float n) { return 1.0 - smoothstep(0.22, 0.55, n); }
+
+// gas texture at disk radius r and (rotated) azimuth a. fr / fa: screen footprint of a pixel in r (points) and a (radians).
+float bh_tex(float r, float a, float fr, float fa, float sd) {
+    float x = a / TAU;
+    float v = 0.46 * bh_pn(vec2(x * 7.0, r * 0.075 + sd), 7.0);                                                   // clumps
+    v += 0.44 * bh_aa(max(fr * 0.20, fa * 3.3)) * bh_pn(vec2(x * 21.0, r * 0.20 + 1.7 * sd), 21.0);               // streaks
+    v += 0.36 * bh_aa(max(fr * 0.46, fa * 8.4)) * bh_pn(vec2(x * 53.0, r * 0.46 + 2.3 * sd), 53.0);               // filaments
+    v += 0.24 * bh_aa(max(fr * 0.95, fa * 16.0)) * bh_pn(vec2(x * 101.0, r * 0.95 + 3.1 * sd), 101.0);            // grain
+    v += 0.30 * bh_aa(fr * 0.55) * bh_pn(vec2(x * 3.0, r * 0.55 + 4.7 * sd), 3.0);                                // irregular gaps between rings
+    return v;
+}
+
+// emission of the thin disk at disk-plane point (X, D); D > 0 is behind the hole, X < 0 comes towards us.
+vec3 bh_disk(float X, float D, float Rin, float Rout, float fr, float fa, UARG u) {
+    float r = length(vec2(X, D));
+    float edge = smoothstep(Rin * 0.96, Rin * 1.08, r) * (1.0 - smoothstep(Rout * 0.58, Rout, r));
+    if (edge <= 0.0) return vec3(0.0);
+    float a = atan2_(D, X);
+    // differential rotation, integrated through u.phase (runs faster while speaking); two alternating layers bound the shear
+    float om = 2.3 * pow(Rin / r, 1.5);
+    float T = 6.0;
+    float pa = mod(u.phase, T), pb = mod(u.phase + 0.5 * T, T);
+    float wa = 1.0 - abs(2.0 * pa / T - 1.0);
+    float tex = mix(bh_tex(r, a - om * pb, fr, fa, 5.3), bh_tex(r, a - om * pa, fr, fa, 0.0), wa);
+    // relativistic beaming: the side coming towards us is brighter and hotter
+    float v = 0.40 * sqrt(Rin / r);
+    float los = -X / r;
+    float dop = pow(max(1.0 + v * los, 0.05), 2.6);
+    float x01 = saturate((r - Rin) / max(Rout - Rin, 0.001));
+    vec3 col = bh_ramp(0.10 + 0.95 * x01 - 0.55 * v * los);
+    float prof = pow(Rin / r, 1.7);
+    // voice: brighter, and bright waves running inwards
+    float wave = pow(0.5 + 0.5 * sin(r * 0.42 + u.time * 7.5), 4.0);
+    float voice = 1.0 + 0.45 * u.level + 0.35 * u.peak + 0.9 * u.level * wave * (1.0 - x01);
+    float I = edge * prof * dop * saturate(0.55 + 0.70 * tex) * voice * 2.6;
+    return col * I;
+}
+
+// the black shadow, with the drop of black squeezed out towards Cancel (mc 0…1)
+float bh_uneven_capsule(vec2 p, float r1, float r2, float h) {
+    p.x = abs(p.x);
+    float b = (r1 - r2) / h;
+    float a = sqrt(max(1.0 - b * b, 0.0));
+    float k = dot(p, vec2(-b, a));
+    if (k < 0.0) return length(p) - r1;
+    if (k > a * h) return length(p - vec2(0.0, h)) - r2;
+    return dot(p, vec2(a, b)) - r1;
+}
+float bh_shadow(vec2 p, float Rs, float mc, float t) {
+    float d = length(p) - Rs;
+    if (mc > 0.001) {
+        float r1 = Rs * 0.52;
+        float r2 = mix(r1, 2.3, mc);
+        float y0 = -Rs * 0.30;
+        float y1 = -(Rs - r2) - 20.0 * mc;
+        vec2 q = vec2(p.x - 1.3 * mc * sin(t * 3.1) * saturate((y0 - p.y) / max(y0 - y1, 1.0)), y0 - p.y);
+        d = smin(d, bh_uneven_capsule(q, r1, r2, max(y0 - y1, 0.01)), 6.0 * mc + 0.01);
+    }
+    return d;
+}
+
+// light kicked off the top of the arc towards Send: a soft flare in the disk's own colours (no beam)
+vec3 bh_plume(vec2 p, float ms, float S, float Rs, UARG u) {
+    if (ms <= 0.001) return vec3(0.0);
+    float t = u.time;
+    float y0 = Rs * 1.55;
+    float tip = y0 + 3.0 + 12.0 * ms + 190.0 * easeInCubic(saturate(S / 0.70));
+    float yy = (p.y - y0) / max(tip - y0, 0.001);
+    if (yy < -0.6 || yy > 1.3) return vec3(0.0);
+    float sway = 0.9 * sin(p.y * 0.21 - t * 5.0) * saturate(yy);
+    float w = (3.0 + 7.0 * ms) * pow(saturate(1.0 - yy), 0.8) + 1.5;
+    float x = p.x - sway;
+    float body = exp(-pow(x / w, 2.0));
+    float flow = 0.55 + 0.45 * gnoise(vec2(x * 0.35, p.y * 0.14 - t * 5.5)) + 0.30 * gnoise(vec2(x * 0.9, p.y * 0.40 - t * 10.0));
+    float along = smoothstep(-0.6, 0.15, yy) * (1.0 - smoothstep(0.55, 1.15, yy));
+    float I = along * body * saturate(flow) * ms * (0.55 + 0.25 * u.level);
+    return bh_ramp(0.35 + 0.35 * saturate(yy)) * I;
+}
+
+// a sparse star field seen through the lens: bhStarDensity of the 8pt cells hold a star (the sets are nested, so stars come and go
+// one by one as it changes), bhTwinkle is the depth of the brightness wobble, bhStarBlue the cold / warm balance
+// (0.5 = the old random mix of blue-white and warm white, 0 = all warm white with a share of pale gold, 1 = all blue-white).
+// Brighter than the old 0.45 (bhStarBright, applied by the caller) the brighter stars also swell and get a soft golden halo.
+vec3 bh_stars(vec2 b, float t) {
+    vec3 acc = vec3(0.0);
+    vec2 cell = floor(b / 8.0);
+    float thr = 1.0 - bhStarDensity;
+    float dens = max(bhStarDensity, 1e-3);
+    float gold = saturate(1.0 - 2.0 * bhStarBlue);
+    float bst = saturate((bhStarBright - 0.45) / 0.75);
+    float hg = 0.6 * (1.0 - saturate(2.0 * bhStarBlue - 1.0));   // how golden the halo is (blue-white stars keep their own colour)
+    for (int j = -1; j <= 1; j++) {
+        for (int i = -1; i <= 1; i++) {
+            vec2 c = cell + vec2(float(i), float(j));
+            float h = hash12(c + 17.0);
+            if (h < thr) continue;
+            vec2 sp = (c + 0.15 + 0.7 * hash22(c + 3.0)) * 8.0;
+            float q = (h - thr) / dens;   // rank of the star: 0 = faintest, 1 = brightest
+            float sz = (0.35 + 0.35 * hash11(h * 91.0)) * (1.0 + 0.9 * bst * q * q);
+            vec2 dv = b - sp;
+            float dd = dot(dv, dv);
+            if (dd > (9.0 + 27.0 * bst) * sz * sz) continue;   // the profile is below 1e-4 of its peak from here on
+            float tw = max(1.0 - bhTwinkle + bhTwinkle * sin(t * (1.5 + 3.0 * h) + h * 40.0), 0.0);
+            float k = tw * (0.35 + 1.2 * q);
+            float m = saturate(hash11(h * 13.0) + 2.0 * (0.5 - bhStarBlue));
+            vec3 sc = mix(vec3(0.75, 0.85, 1.00), vec3(1.00, 0.88, 0.75), m);
+            if (gold > 0.0) sc = mix(sc, vec3(1.00, 0.78, 0.46), gold * hash11(h * 29.0 + 5.0));
+            acc += sc * (exp(-dd / (sz * sz)) * k);
+            if (bst > 0.0) acc += mix(sc, vec3(1.00, 0.70, 0.34), hg) * (0.28 * bst * q * k * exp(-sqrt(dd) / (1.5 * sz)));
+        }
+    }
+    return acc;
+}
+
+// density of the dark nebula around the hole: a flat core that thins out in slowly turning spiral wisps, no rim
+// bhHard = the exponent of the fall-off, bhWisp = how far the wisps push the edge in and out, bhFlow = how fast they turn,
+// bhCore = the density in the middle
+float bh_haze(vec2 p, float R, float t, float L) {
+    float r = length(p);
+    // past the cut the density is below ~1e-3: 2.4 R at the default hardness, further out for a softer edge
+    if (r > R * max(2.4, (1.05 + bhWisp) * pow(7.0, 1.0 / bhHard))) return 0.0;
+    float lr = log(max(r, 1.0));
+    float x = atan2_(p.y, p.x) / TAU;
+    float tf = t * bhFlow;
+    float w = 0.62 * bh_pn(vec2(x * 5.0 + 0.55 * lr - 0.018 * tf, lr * 1.7 - 0.30 * tf), 5.0)
+            + 0.38 * bh_pn(vec2(x * 11.0 + 0.90 * lr + 0.025 * tf, lr * 3.4 - 0.52 * tf + 2.7), 11.0);
+    float edge = R * (1.0 + bhWisp * w + 0.03 * L);
+    float d = r / max(edge, 1.0);
+    return bhCore * exp(-pow(d, bhHard));
+}
+
+// sparks of dust thrown off the hole: they drift outward on slow spirals, cool from gold to red and fade out
+vec3 bh_dust(vec2 p, float R, float t, float L) {
+    float rp = length(p);
+    if (rp < 0.55 * R || rp > 2.1 * R) return vec3(0.0);
+    vec3 acc = vec3(0.0);
+    for (int i = 0; i < 20; i++) {   // 20 sparks: the HUD shares the GPU with the app being typed into
+        float fi = float(i);
+        float h = hash11(fi * 7.31 + 1.7);
+        float life = fract(t * (0.09 + 0.07 * h) + hash11(fi * 3.17 + 0.4));
+        float r = R * (0.62 + 1.30 * life);
+        if (abs(rp - r) > 4.0) continue;
+        float ang = TAU * hash11(fi * 1.93 + 0.2) + (0.6 + 0.5 * h) * life;
+        vec2 dv = p - r * vec2(cos(ang), sin(ang));
+        float sz = 0.55 + 0.55 * hash11(fi * 5.1 + 0.9);
+        float fade = smoothstep(0.0, 0.18, life) * (1.0 - smoothstep(0.45, 1.0, life));
+        float e = exp(-dot(dv, dv) / (sz * sz)) * fade * (0.45 + 0.25 * hash11(fi * 2.3) + 0.5 * L);
+        acc += bh_ramp(0.30 + 0.55 * life) * e;
+    }
+    return acc;
+}
+
+// ---- edge grain ---------------------------------------------------------------------------------------------------------
+// One layer of fine grains: round dots on a jittered grid of cell size S (points) in the point space q, 2x2 cells looked up.
+// d = density of the haze 0…1, px = points per pixel. A dot is present when its random number is below d; its radius grows with d, so
+// the dots overlap into solid colour as d -> 1 (no holes in the core). wl = weight of this layer in a cross-fade: dots drop in and out
+// one by one (dithered by their own random number), so the grains stay crisp during the fade. Colours stay in the dark-gold family:
+// the haze colour cA (near-black), warm umber cB, and a few faint gold specks cG; the variety fades out as the grains merge into solid.
+// Returns premultiplied colour and coverage.
+vec4 bh_grains(vec2 q, float S, float d, float px, float salt, float wl, vec3 cA, vec3 cB, vec3 cG) {
+    vec2 g = q / S;
+    vec2 c0 = floor(g - 0.5);
+    float rad = mix(0.27, 0.80, smoothstep(0.06, 0.80, d));
+    float jit = mix(0.84, 0.20, smoothstep(0.25, 0.95, d));
+    float aa = px / S;
+    float rmin = 0.55 * aa;
+    float v = 1.0 - smoothstep(0.55, 0.95, d);              // how much colour variety (0 in the solid core)
+    float spk = 0.12 * (1.0 - smoothstep(0.40, 0.90, d));   // share of gold specks (none in the dense part)
+    vec3 cM = mix(cA, cB, 0.45 * v), cU = mix(cA, cB, v);
+    float cw = 0.0, best = 0.0;
+    vec3 acc = vec3(0.0);
+    for (int j = 0; j < 2; j++) {
+        for (int i = 0; i < 2; i++) {
+            vec2 c = c0 + vec2(float(i), float(j));
+            vec2 hv = hash22(c + salt);
+            float pres = saturate((d - hv.x) * 24.0);
+            if (pres <= 0.0) continue;
+            pres *= saturate((1.2 * wl - fract(hv.x * 61.7 + hv.y * 5.3)) * 6.0);
+            if (pres <= 0.0) continue;
+            vec2 jv = vec2(hv.y, fract(hv.y * 71.3 + hv.x * 13.7));
+            vec2 o = g - (c + 0.5 + (jv - 0.5) * jit);
+            float rr = rad * (0.78 + 0.44 * jv.x);
+            if (rr < rmin) {   // a dot smaller than a pixel would only make grey mist: keep it one pixel big and thin such dots out by their area
+                pres *= saturate((rr * rr / (rmin * rmin) - fract(hv.x * 97.3 + hv.y * 3.7)) * 8.0);
+                rr = rmin;
+            }
+            float cov = saturate((rr - length(o)) / aa + 0.5) * pres;
+            if (cov <= 0.0) continue;
+            float k = fract(hv.x * 173.7 + hv.y * 9.13);
+            vec3 col = k < 0.50 ? cA : (k < 0.78 ? cM : cU);
+            if (fract(hv.x * 411.3 + hv.y * 7.7) < spk) { col = cG; cov *= 0.8; }
+            acc += col * cov;
+            cw += cov;
+            best = max(best, cov);
+        }
+    }
+    return vec4(acc / max(cw, 0.0001) * best, best);
+}
+
+// The haze as grains: for density d (= the smooth haze) the fine stipple, solid where d -> 1. The grains flow slowly outward
+// (bhGrainDrift): two layers whose coordinates slide away from the hole and cross-fade, so the flow loops seamlessly.
+// sp = the haze colour; the umber and gold come from bhGlowColor, so the grains follow the colour of the warm edge light.
+vec4 bh_sky(vec2 p, float d, float tm, float px, float salt, vec3 sp, float light) {
+    float S = max(bhGrainSize, 0.2);
+    vec3 cB = mix(sp, bhGlowColor * 0.22, 0.8);
+    vec3 cG = mix(bhGlowColor, vec3(1.00, 0.82, 0.50), 0.4) * (light > 0.5 ? 0.85 : 0.60);
+    vec4 gr;
+    if (bhGrainDrift > 0.002) {
+        float ph = bhGrainDrift * tm / 9.0;
+        float pa = fract(ph), pb = fract(ph + 0.5);
+        float wa = 1.0 - abs(2.0 * pa - 1.0);
+        vec2 dir = p / max(length(p), 0.001);
+        gr = vec4(0.0);
+        if (wa > 0.003) gr = bh_grains(p - dir * (pa * 14.0), S, d, px, salt, wa, sp, cB, cG);
+        if (wa < 0.997) gr = over(gr, bh_grains(p - dir * (pb * 14.0), S, d, px, salt + 37.0, 1.0 - wa, sp, cB, cG));
+    } else {
+        gr = bh_grains(p, S, d, px, salt, 1.0, sp, cB, cG);
+    }
+    return over(vec4(sp, 1.0) * smoothstep(0.90, 0.985, d), gr);
+}
+
+vec4 skin_blackhole(vec2 p, UARG u) {
+    float S = u.send, C = u.cancel;
+    float L = u.level, pk = u.peak, t = u.time;
+    float tm = u.reduce > 0.5 ? 0.0 : t;   // clock of the new motions (star drift, grain flow): they stand still when the system asks for less motion
+    float light = u.dark > 0.5 ? 0.0 : 1.0;
+    float g = 0.2 + 0.8 * u.appear;
+    float ms = hud_smoother(0.03, 0.97, aimSend(u));
+    float mc = hud_smoother(0.03, 0.97, aimCancel(u));
+    if (S > 0.0) { ms = 1.0; mc = 0.0; }
+    if (C > 0.0) { ms = 0.0; mc = 1.0 - smoothstep(0.0, 0.30, C); }   // the drop of black is drawn back in first
+
+    // release timelines
+    float sFly = easeInCubic(saturate(S / 0.55));      // the ring of light flies to Send, shrinking
+    float sHole = smoothstep(0.0, 0.45, S);            // meanwhile the hole collapses
+    float c1 = easeInOut(saturate(C / 0.55));
+    float c2 = easeInCubic(saturate((C - 0.42) / 0.50));
+    float Gs = g * (1.0 - c2);
+
+    // geometry (points). The voice makes the gravity "breathe": the shadow and the arcs swell on syllables.
+    float beat = sin(t * 17.0);
+    float Rs = 19.0 * Gs * (1.0 + 0.035 * L + 0.045 * pk * beat) * (1.0 + 0.75 * c1) * (1.0 - sHole);
+    float K = 20.6 * Gs * (1.0 + 0.10 * L + 0.09 * pk * sin(t * 17.0 + 0.7)) * (1.0 + 0.55 * c1);
+    float SI = 0.15;
+    float Rin = 22.8 * Gs * (1.0 + 0.55 * c1);
+    float Rout = 61.0 * Gs * (1.0 - 0.40 * c1);
+
+    // the disk (band + arcs) is flung up to Send on send
+    vec2 pd = (p - vec2(0.0, 47.0 * sFly)) / max(1.0 - 0.8 * sFly, 0.05);
+    float sd = bh_shadow(p, Rs, mc, t);
+    float hole = cover(sd, u);
+
+    // lens lookup position: pixels beside the drop of black are measured from its outline, so the light hugs it
+    float rho = length(pd);
+    vec2 dir = pd / max(rho, 1e-3);
+    vec2 th = S > 0.0 ? pd : dir * (Rs + max(sd, 0.0));
+    // Send aim: the middle of the upper arc bulges up where the plume leaves it
+    float flare = ms * exp(-abs(th.x) / 8.0) * smoothstep(0.85 * Rs, 1.7 * Rs, th.y);
+    th.y /= 1.0 + 0.27 * flare;
+
+    // far half through the lens (primary image above, secondary below)
+    float r2 = max(dot(th, th), 1e-2);
+    float den = 1.0 + K * th.y / (SI * r2);
+    float by = th.y / (abs(den) < 1e-3 ? (den < 0.0 ? -1e-3 : 1e-3) : den);
+    float bx = th.x * (1.0 - K * by / (SI * r2));
+    float lensOK = (by > 0.0 && (th.y > 0.0 || den < 0.0)) ? 1.0 : 0.0;
+    float Xl = bx, Dl = min(by, 1e4) / SI;
+    float rl = length(vec2(Xl, Dl));
+    float frl = fwidth(rl);
+    float fal = fwidth(Xl / max(rl, 1e-3)) + fwidth(Dl / max(rl, 1e-3));
+    // near half, straight on
+    float Xf = pd.x, Df = min(pd.y, 0.0) / SI;
+    float rf = length(vec2(Xf, Df));
+    float frf = fwidth(rf);
+    float faf = fwidth(Xf / max(rf, 1e-3)) + fwidth(Df / max(rf, 1e-3));
+
+    float lensW = lensOK * (th.y > 0.0 ? 1.0 + 0.6 * flare : 0.6);
+    if (S > 0.0) lensW *= smoothstep(18.0 * Gs, 20.0 * Gs, rho);   // the flying ring has no hole of its own
+    vec3 Eb = lensW > 0.0 ? bh_disk(Xl, Dl, Rin, Rout, frl, fal, u) * lensW : vec3(0.0);
+    vec3 Ef = pd.y < 0.0 ? bh_disk(Xf, Df, Rin, Rout, frf, faf, u) : vec3(0.0);
+
+    // photon ring (and a faint second one) right on the shadow's outline; brighter on the approaching side
+    float rp = max(length(p), 1e-3);
+    float ring = 0.95 * exp(-pow((sd - 0.30) / 0.38, 2.0)) + 0.22 * exp(-pow((sd - 1.5) / 0.45, 2.0));
+    ring *= (1.0 - 0.35 * p.x / rp) * (1.0 + 0.8 * pk + 0.25 * L) * smoothstep(0.5, 3.0, Rs);
+    vec3 Er = bh_ramp(0.16) * ring;
+
+    // soft bloom around the upper arc and along the band
+    float psn = pd.y / max(rho, 1e-3);
+    float gArc = exp(-pow((rho - 1.55 * Rs) / (0.55 * Rs + 0.5), 2.0)) * (0.25 + 0.75 * smoothstep(-0.2, 0.9, psn)) * (1.0 - 0.3 * pd.x / max(rho, 1e-3));
+    float gBand = exp(-pow((pd.y + 4.6 * Gs) / (4.8 * Gs + 0.5), 2.0)) * exp(-pow(pd.x / (52.0 * Gs + 1.0), 2.0)) * (1.0 - 0.3 * pd.x / (52.0 * Gs + 1.0));
+    vec3 Eg = bh_ramp(0.45) * (0.20 * gArc + 0.16 * gBand) * (1.0 + 0.5 * L) * (1.0 - smoothstep(0.3, 0.9, S));
+
+    // the dark nebula the hole sits in (no rim), with stars lensed into small arcs near the Einstein ring
+    // On a light page the cloud stays tighter and neutral so it never reads as a stain; on a dark page it is
+    // larger and its thinning edge glows faintly with the disk's light.
+    float Rf = (light > 0.5 ? bhRadius : bhRadius + 4.0) * max(Gs * (1.0 - smoothstep(0.05, 0.75, S)), 0.02);   // shrinks away on send
+    float A = bh_haze(p, Rf, t, L) * (1.0 - smoothstep(0.75, 0.95, S));
+    vec3 Ed = vec3(0.0);
+    if (bhDust > 0.001) Ed = bh_dust(p, Rf, t, L) * bhDust * (1.0 - smoothstep(0.15, 0.55, S)) * (1.0 - c1);
+    // the haze layer: smooth as before, or (bhGrain) a fine stipple that merges into solid where the haze is dense and thins out
+    // into single grains. gw is the weight of the stipple (it rises fast, so 0.8 and more leaves no smooth fog behind).
+    vec3 space = light > 0.5 ? bhColor : bhColor * 0.1;
+    vec4 haze = vec4(space * A, A);
+    float gw = 1.0 - (1.0 - bhGrain) * (1.0 - bhGrain), gk = 1.0;   // gk: the warm edge light collects on the grains
+    if (bhGrain > 0.002 && A > 0.002 && A < 0.999) {
+        vec4 gr = bh_sky(p, A, tm, 1.0 / u.scale, 61.0 * u.seed, space, light);
+        haze = mix(haze, gr, gw);
+        gk = mix(1.0, saturate(gr.a / max(A, 0.2)), gw);
+    }
+    float An = A / max(bhCore, 1e-3);   // density relative to its own centre, so the glow stays on the thinning edge
+    vec3 Eh = bhGlowColor * (light > 0.5 ? bhGlow : bhGlow * 3.2) * An * (1.0 - An) * 4.0 * gk * (1.0 - smoothstep(0.1, 0.5, S));
+    float tE = 1.6 * Rs;
+    vec2 bs = p * (1.0 - tE * tE / max(dot(p, p), 1e-2));
+    vec3 Es = vec3(0.0);
+    if (u.contrast < 0.5 && A > 0.001 && bhStarDensity > 0.001 && bhStarBright > 0.001) {   // stars only exist inside the haze
+        if (bhStarDrift > 0.001) {   // the sky turns slowly about the hole: 6 deg/s at 1 (like starDrift in skin_astra)
+            float sa = bhStarDrift * 0.1047 * tm;
+            vec2 sc = vec2(cos(sa), sin(sa));
+            bs = vec2(sc.x * bs.x + sc.y * bs.y, sc.x * bs.y - sc.y * bs.x);
+        }
+        Es = bh_stars(bs + vec2(u.seed * 97.0, u.seed * 61.0), t) * A * bhStarBright;
+    }
+
+    // the Send plume
+    vec3 Ep = bh_plume(p, ms, S, 19.0 * Gs, u);
+
+    // final flash when the cancel collapse completes; a glint at Send when the ring arrives
+    float flT = saturate((C - 0.80) / 0.20);
+    float flash = C > 0.0 ? exp(-pow((length(p) - 30.0 * flT) / 2.2, 2.0)) * sin(PI * flT) * 1.6 : 0.0;
+    float gT = saturate((S - 0.42) / 0.40);
+    vec2 gq = (p - vec2(0.0, 47.0)) / vec2(3.0 + 16.0 * gT, 2.0 + 3.0 * gT);
+    flash += S > 0.0 ? exp(-dot(gq, gq)) * sin(PI * gT) * 2.2 : 0.0;
+
+    float diskFade = (1.0 - 0.65 * c1) * (1.0 + 0.6 * sFly) * (1.0 - smoothstep(0.50, 0.75, S));
+    // disk light: both images of the disk, the photon ring, the bloom and the plume. bhDiskBright is its gain, bhDiskSat its saturation
+    vec3 Edisk = (((Eb + Eg) * diskFade + Er) * (1.0 - hole) + Ef * diskFade + Ep * (1.0 - smoothstep(0.0, 0.35, S))) * bhDiskBright;
+    if (bhDiskSat != 1.0) Edisk = bh_sat(Edisk, bhDiskSat);
+    vec3 E = Edisk + (Es + Ed + Eh) * (1.0 - hole) + bh_ramp(0.1) * flash;
+    vec3 col = 1.0 - exp(-E * 1.45);
+    float a = max(col.r, max(col.g, col.b));
+    vec4 base = over(vec4(0.0, 0.0, 0.0, hole), haze);
+    vec4 outc = over(vec4(col, a), base);
+    float endFade = (1.0 - smoothstep(0.85, 1.0, S)) * (1.0 - smoothstep(0.96, 1.0, C));
+    return outc * endFade * (1.0 - u.fade);
+}

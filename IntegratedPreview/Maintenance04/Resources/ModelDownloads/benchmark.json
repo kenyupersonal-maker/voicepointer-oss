@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "measured_at": "2026-10-02",
+  "machine": "m1_max_32gb",
+  "sample": "synthetic_ram_2s_max16_tokens",
+  "repetitions": 1,
+  "models": [
+    {"id": "qwen06", "load_ms": 385, "loaded_peak_rss_mb": 1564, "peak_rss_mb": 1649, "status": "measured_synthetic", "synthetic_inference_ms": 1742},
+    {"id": "qwen17", "load_ms": 564, "loaded_peak_rss_mb": 2454, "peak_rss_mb": 2542, "status": "measured_synthetic", "synthetic_inference_ms": 1594}
+  ]
+}

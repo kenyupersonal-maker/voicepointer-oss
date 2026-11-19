@@ -1,0 +1,8 @@
+(version 1)
+(allow default)
+(deny network*)
+(deny file-write*)
+(allow file-write* (subpath (param "STAGE")) (literal "/dev/null"))
+; Only the public runtime/source, this script and system libraries need reads. No provider data/credentials.
+(deny file-read* (subpath (param "PRIVATE_DATA")))
+(allow file-read* (subpath (param "SOURCE")) (subpath (param "STAGE")))

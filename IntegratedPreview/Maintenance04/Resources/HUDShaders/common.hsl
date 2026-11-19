@@ -1,0 +1,248 @@
+// ---- Shared helpers (GLSL/MSL common dialect) ----
+float hash12(vec2 p) { vec3 p3 = fract(vec3(p.x, p.y, p.x) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
+float hash11(float p) { p = fract(p * 0.1031); p *= p + 33.33; p *= p + p; return fract(p); }
+vec2 hash22(vec2 p) { vec3 p3 = fract(vec3(p.x, p.y, p.x) * vec3(0.1031, 0.1030, 0.0973)); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.xx + p3.yz) * p3.zy); }
+float vnoise(vec2 p) {
+    vec2 i = floor(p); vec2 f = fract(p);
+    vec2 w = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    float a = hash12(i), b = hash12(i + vec2(1.0, 0.0)), c = hash12(i + vec2(0.0, 1.0)), d = hash12(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, w.x), mix(c, d, w.x), w.y);
+}
+float gnoise(vec2 p) {
+    vec2 i = floor(p); vec2 f = fract(p);
+    vec2 w = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    vec2 ga = hash22(i) * 2.0 - 1.0, gb = hash22(i + vec2(1.0, 0.0)) * 2.0 - 1.0;
+    vec2 gc = hash22(i + vec2(0.0, 1.0)) * 2.0 - 1.0, gd = hash22(i + vec2(1.0, 1.0)) * 2.0 - 1.0;
+    float va = dot(ga, f), vb = dot(gb, f - vec2(1.0, 0.0)), vc = dot(gc, f - vec2(0.0, 1.0)), vd = dot(gd, f - vec2(1.0, 1.0));
+    return mix(mix(va, vb, w.x), mix(vc, vd, w.x), w.y);   // ~[-0.7, 0.7]
+}
+float fbm3(vec2 p) { float v = 0.0; float a = 0.5; for (int i = 0; i < 3; i++) { v += a * gnoise(p); p = vec2(1.6 * p.x - 1.2 * p.y, 1.2 * p.x + 1.6 * p.y); a *= 0.5; } return v; }
+float fbm5(vec2 p) { float v = 0.0; float a = 0.5; for (int i = 0; i < 5; i++) { v += a * gnoise(p); p = vec2(1.6 * p.x - 1.2 * p.y, 1.2 * p.x + 1.6 * p.y); a *= 0.5; } return v; }
+mat2 rot2(float a) { float c = cos(a), s = sin(a); return mat2(vec2(c, s), vec2(-s, c)); }
+float smin(float a, float b, float k) { float h = saturate(0.5 + 0.5 * (b - a) / k); return mix(b, a, h) - k * h * (1.0 - h); }
+float smax(float a, float b, float k) { return -smin(-a, -b, k); }
+float easeOutCubic(float x) { float y = 1.0 - x; return 1.0 - y * y * y; }
+float easeInCubic(float x) { return x * x * x; }
+float easeInOut(float x) { return x < 0.5 ? 4.0 * x * x * x : 1.0 - pow(-2.0 * x + 2.0, 3.0) / 2.0; }
+float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
+// Premultiplied "over": a over b.
+vec4 over(vec4 a, vec4 b) { return a + b * (1.0 - a.a); }
+// Pixel-accurate coverage for a signed distance in points.
+float cover(float d, UARG u) { return saturate(0.5 - d * u.scale); }
+// Aim split helpers. aimSend / aimCancel follow the pointer continuously (light, glow, a slight lean). snapSend /
+// snapCancel (2026-11-10) are for anything that turns into the Send / Cancel symbol: 0 until the pointer crosses into
+// that side, then a fixed-time ramp to 1 that plays through on its own (u.aimRaw, see ShaderSkin.snap).
+float aimSend(UARG u) { return max(u.aim, 0.0); }
+float aimCancel(UARG u) { return max(-u.aim, 0.0); }
+// Since 0.5.96 the two are separate amounts packed into u.aimRaw (Send in thousandths as the integer part, Cancel as
+// the fraction), so one can fall while the other rises.
+float snapSend(UARG u) { return saturate(floor(u.aimRaw) / 1000.0); }
+float snapCancel(UARG u) { return saturate(fract(u.aimRaw) / 0.999); }
+
+// ---- Shared "drop" shape language (liquid metal, glass bead) ----
+// Default: a round drop that bounces and ripples with the voice. Aim Send: it inflates into an up-pointing
+// rounded triangle. Aim Cancel: it draws itself in into a small horizontal pill. Send release: flies up.
+// Cancel release: shrinks away.
+float hud_tri(vec2 p, float r) {
+    // equilateral triangle pointing up (side 2r), centred on its centroid; r = 0 gives a point
+    float k = 1.7320508;
+    p.x = abs(p.x) - r;
+    p.y = p.y + r / k;
+    if (p.x + k * p.y > 0.0) p = vec2(p.x - k * p.y, -k * p.x - p.y) / 2.0;
+    p.x -= clamp(p.x, -2.0 * r, 0.0);
+    return -length(p) * sign(p.y);
+}
+float hud_smoother(float a, float b, float x) { float t = saturate((x - a) / (b - a)); return t * t * t * (t * (t * 6.0 - 15.0) + 10.0); }
+// (up morph, pill morph, send flight, cancel shrink)
+vec4 drop_state(UARG u) {
+    float ms = hud_smoother(0.0, 1.0, snapSend(u));
+    float mc = hud_smoother(0.0, 1.0, snapCancel(u));
+    if (u.send > 0.0) { ms = 1.0; mc = 0.0; }
+    if (u.cancel > 0.0) { mc = 1.0; ms = 0.0; }
+    return vec4(ms, mc, easeInCubic(saturate(u.send / 0.8)), easeInCubic(saturate(u.cancel / 0.85)));
+}
+float drop_centerY(vec4 st) { return 3.0 * st.x - 3.0 * st.y + 165.0 * st.z; }
+float drop_sdf(vec2 p, vec4 st, UARG u) {
+    float g = 0.2 + 0.8 * u.appear;
+    float L = u.level, t = u.time, pk = u.peak;
+    vec2 q = p - vec2(0.0, drop_centerY(st));
+    q = vec2(q.x / (1.0 - 0.25 * st.z), q.y / (1.0 + 0.5 * st.z));
+    // voice: a jelly-like squash & stretch on syllables
+    float jig = (0.045 * pk + 0.015 * L) * sin(t * 15.0) * (1.0 - 0.5 * max(st.x, st.y));
+    q = vec2(q.x * (1.0 + jig), q.y * (1.0 - jig));
+    float k = max(g * (1.0 - st.w), 0.001);
+    q /= k;
+    float R = 24.0 * (1.0 + 0.09 * L + 0.07 * pk);
+    float d;
+    if (st.x >= st.y) {
+        d = hud_tri(vec2(q.x, q.y / (1.0 + 0.08 * st.x) - st.x), 21.5 * st.x) - mix(R, 4.0, st.x);
+    } else {
+        d = length(vec2(max(abs(q.x) - 15.0 * st.y, 0.0), q.y)) - mix(R, 7.5, st.y);
+    }
+    float ang = atan2_(q.y, q.x);
+    float ripple = 0.018 * sin(3.0 * ang + t * 1.3) + 0.012 * sin(5.0 * ang - t * 1.9 + 1.0)
+                 + L * (0.055 * sin(5.0 * ang + t * 6.5) + 0.030 * sin(8.0 * ang - t * 9.0)) + 0.035 * pk * sin(4.0 * ang + t * 12.0);
+    ripple *= 1.0 - 0.55 * max(st.x, st.y);
+    d -= R * ripple;
+    return d * k;
+}
+// Height of the drop surface above the page (points): a sphere-like dome plus small voice waves.
+float drop_z(vec2 p, vec4 st, UARG u) {
+    float e = max(-drop_sdf(p, st, u), 0.0);
+    float B = mix(mix(24.0, 13.0, st.x), 7.5, st.y) * (0.2 + 0.8 * u.appear) * (1.0 - st.w);
+    float x = saturate(e / max(B, 0.001));
+    float z = B * sqrt(max(x * (2.0 - x), 0.0));
+    z += (0.28 * u.level + 0.22 * u.peak) * sin(e * 0.50 - u.time * 9.0) * smoothstep(0.0, 4.0, e) * (1.0 - smoothstep(10.0, 18.0, e));
+    return z;
+}
+vec3 drop_normal(vec2 p, vec4 st, UARG u) {
+    float h = 0.5;
+    float zx = drop_z(p + vec2(h, 0.0), st, u) - drop_z(p - vec2(h, 0.0), st, u);
+    float zy = drop_z(p + vec2(0.0, h), st, u) - drop_z(p - vec2(0.0, h), st, u);
+    return normalize(vec3(-zx / (2.0 * h), -zy / (2.0 * h), 1.0));
+}
+
+// ---- The aimed label is a lamp ----
+// It hangs in front of the page at the label position; it lights the drop (highlights, reflections)
+// and the page around it, and a glass drop focuses it into a caustic behind itself.
+vec2 aim_light(UARG u) {
+    float s = aimSend(u), c = aimCancel(u);
+    float a = max(s, c);
+    float dirY = s >= c ? 1.0 : -1.0;
+    if (u.send > 0.0) { a = 1.0; dirY = 1.0; }
+    if (u.cancel > 0.0) { a = max(c, 1.0 - saturate(u.cancel * 2.5)); dirY = -1.0; }
+    float I = smoothstep(0.05, 0.85, a) * (0.90 + 0.25 * u.level);
+    I *= 1.0 - smoothstep(0.35, 0.90, u.send);
+    return vec2(dirY, I);
+}
+vec3 aim_color(float dirY) { return dirY > 0.0 ? vec3(0.30, 1.00, 0.50) : vec3(1.00, 0.34, 0.34); }
+vec3 aim_lamp(float dirY) { return vec3(0.0, dirY * 46.0, 22.0); }
+
+// Light the lamp throws on the page: a pool around the label, the drop's soft light-shadow (metal),
+// or a focused caustic behind the drop (glass).
+vec4 page_light(vec2 p, vec4 st, float glass, UARG u) {
+    vec2 al = aim_light(u);
+    float dirY = al.x, I = al.y;
+    if (I <= 0.001) return vec4(0.0);
+    float light = u.dark > 0.5 ? 0.0 : 1.0;
+    vec3 lamp = aim_lamp(dirY);
+    vec2 lp = lamp.xy;
+    vec2 dv = p - lp;
+    float z2 = lamp.z * lamp.z;
+    float irr = z2 / (z2 + dot(dv, dv));
+    irr = irr * sqrt(irr);
+    float occ = 1.0;
+    for (int k = 1; k <= 2; k++) {
+        vec2 q = mix(p, lp, float(k) / 3.0);
+        occ = min(occ, saturate(drop_sdf(q, st, u) / 6.0 + 0.5));
+    }
+    vec3 lc = aim_color(dirY);
+    float spill = irr * I * mix(occ, mix(1.0, occ, 0.6), glass);
+    float caustic = 0.0;
+    if (glass > 0.5) {
+        vec2 c0 = vec2(0.0, drop_centerY(st));
+        vec2 f = c0 + vec2(0.0, -dirY * 31.0);
+        vec2 df = (p - f) / vec2(8.0, 5.0);
+        caustic = exp(-dot(df, df)) * I * 1.2 * saturate(drop_sdf(p, st, u) / 2.0);
+    }
+    float e = spill + caustic;
+    return light > 0.5 ? vec4(lc * e * 0.32, saturate(e * 0.30)) : vec4(lc * e * 0.60, saturate(e * 0.05));
+}
+
+// Colored lamp light on a drop surface point: (sharp specular, broad sheen, rim), already weighted by intensity.
+vec3 lamp_terms(vec2 p, float z, vec3 n, UARG u) {
+    vec2 al = aim_light(u);
+    float I = al.y;
+    if (I <= 0.001) return vec3(0.0);
+    vec3 lamp = aim_lamp(al.x);
+    vec3 Ld = normalize(lamp - vec3(p, z));
+    vec3 H = normalize(Ld + vec3(0.0, 0.0, 1.0));
+    float nh = max(dot(n, H), 0.0);
+    float sharp = pow(nh, 140.0) * 3.0 * I;
+    float broad = pow(nh, mix(30.0, 10.0, I)) * 0.95 * I;     // a brighter lamp gives a bigger highlight
+    vec2 nx = n.xy / max(length(n.xy), 1e-4);
+    float rim = pow(1.0 - n.z, 2.0) * max(dot(nx, normalize(Ld.xy + vec2(1e-4))), 0.0) * 0.90 * I;
+    return vec3(sharp, broad, rim);
+}
+
+// ---- Shared 小球 symbol language (2026-11-10): five voice bars that turn and shrink with the lean, then an up arrow
+// (Send) or an undo arrow (Cancel) that draws itself in one stroke. Distances in points; g is the drawn fraction.
+// A stroke from a toward b, drawn up to fraction f of its length.
+float sym_seg(vec2 p, vec2 a, vec2 b, float f) {
+    if (f <= 0.0) return 1e5;
+    vec2 e = a + (b - a) * min(f, 1.0);
+    vec2 pa = p - a, ba = e - a;
+    float h = saturate(dot(pa, ba) / max(dot(ba, ba), 1e-5));
+    return length(pa - ba * h);
+}
+// An arc round c (radius r) from angle a0, counterclockwise over `span`, drawn up to fraction f.
+float sym_arc(vec2 p, vec2 c, float r, float a0, float span, float f) {
+    if (f <= 0.0) return 1e5;
+    float sweep = span * min(f, 1.0);
+    vec2 q = p - c;
+    float ang = atan2(q.y, q.x) - a0;
+    ang -= TAU * floor(ang / TAU);
+    if (ang <= sweep) return abs(length(q) - r);
+    vec2 e0 = c + r * vec2(cos(a0), sin(a0));
+    vec2 e1 = c + r * vec2(cos(a0 + sweep), sin(a0 + sweep));
+    return min(length(p - e0), length(p - e1));
+}
+// The voice bars (3.4 pt wide), turned a quarter and shrunk by the lean m toward dir.
+float sym_bars(vec2 q, float m, float dir, UARG u) {
+    float k = max(1.0 - 0.65 * m, 0.05);
+    q = rot2(dir * m * 1.5708) * q / k;
+    float d = 1e5;
+    for (int i = 0; i < 5; i++) {
+        float fi = float(i);
+        float x = (fi - 2.0) * 7.0;
+        float w = 1.0 - abs(fi - 2.0) * 0.33;
+        float live = 0.72 + 0.28 * sin(u.time * (11.0 + 2.3 * fi) + fi * 1.9);
+        float h = mix(4.0, 10.0, w) + (24.0 * u.level + 10.0 * u.peak) * w * live;
+        d = min(d, sym_seg(q, vec2(x, -h * 0.5 + 1.7), vec2(x, h * 0.5 - 1.7), 1.0) - 1.7);
+    }
+    return d * k;
+}
+// Up arrow: the shaft grows from the tail to the tip, then both wings grow out of the tip.
+float sym_up(vec2 q, float g) {
+    float f1 = saturate(g / 0.6), f2 = saturate((g - 0.6) / 0.4);
+    vec2 tail = vec2(0.0, -13.0), tip = vec2(0.0, 13.0);
+    float d = sym_seg(q, tail, tip, f1);
+    d = min(d, sym_seg(q, tip, vec2(-10.0, 3.0), f2));
+    d = min(d, sym_seg(q, tip, vec2(10.0, 3.0), f2));
+    return d - 1.6;
+}
+// Undo arrow, drawn from the top down (2026-11-10): the top tail, round the right-hand turn, along the bottom to the
+// tip at the lower left, then the head. (The path below is the old bottom-up one, mirrored.)
+float sym_undo(vec2 q, float g) {
+    q.y = -q.y;
+    float L0 = 10.0, L1 = 3.14159 * 8.5, L2 = 13.0, L3 = 7.0;
+    float t = g * (L0 + L1 + L2 + L3);
+    float f0 = saturate(t / L0);
+    float f1 = saturate((t - L0) / L1);
+    float f2 = saturate((t - L0 - L1) / L2);
+    float f3 = saturate((t - L0 - L1 - L2) / L3);
+    float d = sym_seg(q, vec2(-6.0, -9.0), vec2(4.0, -9.0), f0);
+    d = min(d, sym_arc(q, vec2(4.0, -0.5), 8.5, -1.5708, 3.14159, f1));
+    d = min(d, sym_seg(q, vec2(4.0, 8.0), vec2(-9.0, 8.0), f2));
+    d = min(d, sym_seg(q, vec2(-9.0, 8.0), vec2(-4.0, 13.0), f3));
+    d = min(d, sym_seg(q, vec2(-9.0, 8.0), vec2(-4.0, 3.0), f3));
+    return d - 1.6;
+}
+// (lean m 0…1, side +1 Send / -1 Cancel, bars shown 0…1, symbol drawn 0…1) from the aim and the release.
+vec4 sym_state(UARG u) {
+    float as = snapSend(u), ac = snapCancel(u);
+    float dir = as >= ac ? 1.0 : -1.0;
+    float m = max(as, ac);
+    if (u.send > 0.0) { dir = 1.0; m = 1.0; }
+    if (u.cancel > 0.0) { dir = -1.0; m = 1.0; }
+    float grow = (u.send > 0.0 || u.cancel > 0.0) ? 1.0 : hud_smoother(0.30, 1.0, m);
+    float bars = 1.0 - hud_smoother(0.0, 0.45, m);
+    m = hud_smoother(0.0, 1.0, m);
+    return vec4(m, dir, bars, grow);
+}
+// Distance to whichever of bars / symbol is showing (the symbol for side dir), and which one it is in .y (0 bars).
+vec2 sym_mark(vec2 q, vec4 st, UARG u) {
+    float dB = st.z > 0.001 ? sym_bars(q, st.x, st.y, u) : 1e5;
+    float dS = st.w > 0.0 ? (st.y > 0.0 ? sym_up(q, st.w) : sym_undo(q, st.w)) : 1e5;
+    return dB < dS ? vec2(dB, 0.0) : vec2(dS, 1.0);
+}

@@ -1,0 +1,94 @@
+// 点阵（2026-11-10 按主题重做；上一版罩着玻璃、镶着金属边，Ken：创意有点意思，样式非常丑）。
+// 主题：一小块像素屏，屏幕本身就是内容。由此反推：
+// - 材质只有一块平的圆屏和上面的圆点：没有玻璃罩、高光和金属边。浅色是浅灰底深色点（像墨水屏），
+//   深色是黑底白点（像小灯珠），灭着的点只留一点点影子；
+// - 说话时动的是点：中间九列点像均衡器一样一格一格地跳，安静时只剩中间一横排；
+// - 往上推：均衡器的点一颗颗灭掉，接着从下往上一格格亮出 ↑（绿灯）；往下推从上往下亮出 ↩（红灯）。
+//   两个符号都是按格子画死的点阵字（0.5.91 是拿连续的线条去套格子，↶ 缺了一角，点的颜色也深浅不一，
+//   Ken：太奇怪）；符号的每个点都是同一个颜色；
+// - 发送时箭头一格一格往上滚出屏幕；撤回时点随机熄灭，屏幕暗下去。
+
+// The equalizer: lit when the cell (column cx, row cy, both counted from the centre) is inside its column's height.
+float dt_eq(vec2 ci, UARG u) {
+    float ax = abs(ci.x);
+    if (ax > 4.5) return 0.0;
+    float w = 1.0 - ax / 5.6;
+    float live = 0.62 + 0.38 * sin(u.time * (8.5 + 1.9 * ax) + ci.x * 1.7 + 0.6 * ax * ax);
+    float rows = floor((7.5 * u.level + 2.5 * u.peak) * w * live + 0.35);
+    return step(abs(ci.y), rows + 0.25);
+}
+
+// ↑ as a dot-matrix glyph: the order (0…11) in which cell ci lights, or -1 when it is not part of the glyph.
+// The shaft from the bottom to the tip, then both wings out of the tip.
+float dt_upOrder(vec2 ci) {
+    float ax = abs(ci.x);
+    if (ax < 0.5 && abs(ci.y) < 4.5) return ci.y + 4.0;
+    if (ax > 0.5 && ax < 3.5 && abs(ci.y - (4.0 - ax)) < 0.5) return 8.0 + ax;
+    return -1.0;
+}
+
+// ↩ as a dot-matrix glyph, drawn from the top down: the order (0…20) in which cell ci lights, or -1.
+// Along the top to the right, down the right-hand side, back along the bottom to the tip, then the head.
+float dt_undoOrder(vec2 ci) {
+    float x = ci.x, y = ci.y;
+    if (abs(y - 3.0) < 0.5 && x > -3.5 && x < 2.5) return x + 3.0;                 // top row, -3…2 → 0…5
+    if (abs(x - 3.0) < 0.5 && y > -1.5 && y < 2.5) return 6.0 + (2.0 - y);         // right side, 2…-1 → 6…9
+    if (abs(y + 2.0) < 0.5 && x > -4.5 && x < 2.5) return 10.0 + (2.0 - x);        // bottom row, 2…-4 → 10…16
+    float ay = abs(y + 2.0);                                                        // the head's two wings
+    if (ay > 0.5 && ay < 2.5 && abs(x - (-4.0 + ay)) < 0.5) return 16.0 + ay * 2.0;
+    return -1.0;
+}
+
+vec4 skin_dither(vec2 p, UARG u) {
+    vec4 st = sym_state(u);
+    float dark = u.dark;
+    float S = u.send, C = u.cancel;
+    float g = max(0.2 + 0.8 * u.appear, 0.001);
+    vec2 q = p / g;
+    float R = 34.0;
+    float cell = 4.0;
+    float dDisc = (length(q) - R) * g;
+    float screenA = (1.0 - smoothstep(0.55, 0.95, S)) * (1.0 - smoothstep(0.70, 1.0, C));
+
+    // a soft shadow under the screen
+    vec2 sq = (q - vec2(0.0, -3.0)) / (R + 5.0);
+    float shA = exp(-pow(max(length(sq) - 0.84, 0.0) / 0.14, 2.0)) * (dark > 0.5 ? 0.40 : 0.14) * screenA;
+    vec4 back = vec4(vec3(0.0), shA) * saturate(dDisc / 1.2 + 0.5);
+    if (dDisc > 1.5) return back * (1.0 - u.fade);
+
+    vec3 scr = dark > 0.5 ? vec3(0.075, 0.078, 0.085) : vec3(0.945, 0.947, 0.952);
+    vec3 offC = dark > 0.5 ? vec3(0.150, 0.155, 0.165) : vec3(0.865, 0.868, 0.878);
+    vec3 onC = dark > 0.5 ? vec3(0.96, 0.97, 1.00) : vec3(0.10, 0.10, 0.11);
+    vec3 aimC = st.y > 0.0
+        ? (dark > 0.5 ? vec3(0.36, 1.00, 0.56) : vec3(0.06, 0.62, 0.28))
+        : (dark > 0.5 ? vec3(1.00, 0.40, 0.38) : vec3(0.86, 0.20, 0.18));
+
+    vec2 ci = floor(q / cell + 0.5);
+    vec2 cc = ci * cell;
+    float inScreen = step(length(cc), R - 4.2);
+    // the equalizer's dots go out one by one as the lean starts
+    float eq = dt_eq(ci, u) * step(smoothstep(0.10, 0.45, st.x), hash12(ci + 3.0));
+    // the symbol: its cells light in drawing order; on send it rolls up the screen a row at a time
+    float roll = floor(S * S * 22.0);
+    vec2 gi = ci - vec2(0.0, roll);
+    float order = st.y > 0.0 ? dt_upOrder(gi) : dt_undoOrder(gi);
+    float steps = st.y > 0.0 ? 12.0 : 21.0;
+    float symOn = (st.w > 0.0 && order >= 0.0 && order < st.w * steps + 0.5) ? 1.0 : 0.0;
+    symOn *= step(smoothstep(0.0, 0.70, C), hash12(ci + 7.0));          // cancel: the dots go out at random
+    float lit = max(eq * (1.0 - symOn), symOn) * inScreen;
+    vec3 litC = symOn > 0.5 ? aimC : onC;
+
+    float dl = length(q - cc);
+    float dotOff = cover((dl - 0.95) * g, u) * inScreen;
+    float dotOn = cover((dl - 1.35) * g, u) * lit;
+    vec3 col = mix(scr, offC, dotOff);
+    // lamps glow a little on the dark screen
+    if (dark > 0.5) col += litC * exp(-dl / 1.9) * 0.16 * lit;
+    col = mix(col, litC, dotOn);
+    // a hairline round the screen
+    float edge = cover((abs(dDisc + 0.25 * g) - 0.25) , u);
+    col = mix(col, dark > 0.5 ? vec3(0.26, 0.27, 0.29) : vec3(0.80, 0.81, 0.83), edge);
+
+    float a = cover(dDisc, u) * screenA;
+    return over(vec4(saturate(col) * a, a), back) * (1.0 - u.fade);
+}

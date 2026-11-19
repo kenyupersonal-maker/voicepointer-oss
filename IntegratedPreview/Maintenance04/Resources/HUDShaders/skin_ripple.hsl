@@ -1,0 +1,111 @@
+// 水面（2026-11-10 新做，按「先定主题再反推样式」）。
+// 主题：一小片水面，声音是落在上面的雨点。由此反推：
+// - 材质：一汪清水，中间几乎透明，只有水面的反光和边上一圈弯月面；颜色全部来自倒映的天光；
+// - 说话时动的是水面自己：声音在水面上点出一圈圈往外走的涟漪，声音越大涟漪越高，安静时水面只有很轻的起伏；
+// - 往上推：水面中间拱起一股水柱，顶上甩出一颗水珠（上推到位时水珠已经离开水面）；松手水珠飞上去；
+// - 往下推：水面转成一个小漩涡，中间陷下去；松手整片水顺着漩涡收没了。
+
+// Height of the surface at q (points): the voice's rings, a slow swell, and the whirlpool when leaning down.
+float rp_height(vec2 q, float mc, UARG u) {
+    float t = u.time;
+    float voice = 0.08 + 1.0 * u.level + 0.5 * u.peak;
+    float z = 0.10 * sin(q.x * 0.16 + t * 1.1) * sin(q.y * 0.13 - t * 0.8);
+    for (int i = 0; i < 4; i++) {
+        float fi = float(i);
+        float cyc = t / 1.6 + fi / 4.0;
+        float age = fract(cyc);
+        float id = floor(cyc) * 4.0 + fi;
+        vec2 c = (hash22(vec2(id * 1.7 + 3.0, id * 0.9 + 11.0)) - 0.5) * 30.0;
+        float r = length(q - c);
+        float front = 3.0 + 36.0 * age;
+        float amp = (1.0 - age) * (1.0 - age) * voice;
+        z += amp * exp(-pow((r - front) / 2.4, 2.0));          // one clean crest per drop
+    }
+    z *= 1.0 - 0.7 * mc;
+    float r0 = length(q);
+    float ang = atan2(q.y, q.x);
+    z += mc * 0.9 * sin(2.0 * ang + r0 * 0.30 - t * 5.5) * smoothstep(31.0, 8.0, r0) * smoothstep(0.0, 6.0, r0);
+    z -= mc * 2.6 * exp(-pow(r0 / 7.0, 2.0));
+    return z;
+}
+
+vec3 rp_sky(vec3 r, float dark) {
+    vec3 lo = dark > 0.5 ? vec3(0.05, 0.08, 0.12) : vec3(0.62, 0.74, 0.86);
+    vec3 hi = dark > 0.5 ? vec3(0.55, 0.70, 0.90) : vec3(1.0);
+    return mix(lo, hi, smoothstep(-0.35, 0.55, r.y + 0.25 * r.x));
+}
+
+vec4 skin_ripple(vec2 p, UARG u) {
+    float dark = u.dark;
+    float S = u.send, C = u.cancel;
+    float ms = hud_smoother(0.05, 0.95, aimSend(u));
+    float mc = hud_smoother(0.05, 0.95, aimCancel(u));
+    if (S > 0.0) { ms = 1.0; mc = 0.0; }
+    if (C > 0.0) { mc = 1.0; ms = 0.0; }
+    float fly = easeInCubic(saturate(S / 0.85));
+    float drain = easeInCubic(saturate(C / 0.9));
+    float g = max(0.2 + 0.8 * u.appear, 0.001);
+    float k = max(g * (1.0 - drain), 0.001);
+    vec2 q = rot2(3.0 * drain) * p / k;
+    float R = 32.0;
+    float dPool = (length(q) - R * (1.0 + 0.012 * sin(3.0 * atan2(q.y, q.x) + u.time))) * k;
+    float poolA = 1.0 - smoothstep(0.35, 0.9, fly);
+    vec3 water = dark > 0.5 ? vec3(0.32, 0.50, 0.72) : vec3(0.30, 0.52, 0.78);
+
+    // the pool
+    vec4 pool = vec4(0.0);
+    if (dPool < 1.5) {
+        float e = 0.7;
+        float zx = rp_height(q + vec2(e, 0.0), mc, u) - rp_height(q - vec2(e, 0.0), mc, u);
+        float zy = rp_height(q + vec2(0.0, e), mc, u) - rp_height(q - vec2(0.0, e), mc, u);
+        // the jet lifts the middle
+        float bump = ms * 5.0 * exp(-dot(q, q) / 60.0);
+        vec2 gb = -2.0 * q / 60.0 * bump;
+        vec3 n = normalize(vec3(-(zx / (2.0 * e) + gb.x) * 1.6, -(zy / (2.0 * e) + gb.y) * 1.6, 1.0));
+        vec3 rd = reflect(vec3(0.0, 0.0, -1.0), n);
+        float tilt = 1.0 - n.z;
+        // a clear middle; the slopes of the rings pick up the sky (bright toward the light, tinted away from it)
+        float lit = saturate(dot(n.xy, normalize(vec2(-0.5, 0.8))) * 3.2);
+        float shade = saturate(-dot(n.xy, normalize(vec2(-0.5, 0.8))) * 3.2);
+        vec3 col = mix(water, rp_sky(rd, dark), 0.55);
+        float a = 0.07 + 0.50 * lit + 0.15 * shade + 1.1 * tilt;
+        col = mix(col, dark > 0.5 ? vec3(0.86, 0.93, 1.0) : vec3(1.0), saturate(lit * 0.85));
+        col = mix(col, water * (dark > 0.5 ? 0.95 : 0.85), saturate(shade * 0.7));
+        // the meniscus: the water climbs at its edge, a bright line above and a darker one below
+        float edge = exp(-pow((-dPool / k - 1.2) / 1.1, 2.0));
+        float top = saturate(0.5 + 0.9 * q.y / R);
+        col = mix(col, mix(water * 0.55, dark > 0.5 ? vec3(0.90, 0.95, 1.0) : vec3(1.0), top), edge * 0.85);
+        a = max(a, edge * (0.55 + 0.25 * (1.0 - top)));
+        // the whirlpool's eye
+        float eye = mc * exp(-dot(q, q) / 12.0);
+        col = mix(col, water * 0.40, eye * 0.8);
+        a = max(a, eye * 0.6);
+        a = saturate(a) * cover(dPool, u) * poolA;
+        pool = vec4(saturate(col) * a, a);
+    }
+
+    // the jet and its bead: the bead leaves the surface as the lean completes
+    vec2 pj = p / g;
+    float beadY = 5.0 + 27.0 * ms + 150.0 * fly;
+    float beadR = 4.6 * smoothstep(0.10, 0.55, ms) * (1.0 - 0.3 * fly);
+    float neck = (1.0 - smoothstep(0.55, 0.85, ms)) * smoothstep(0.05, 0.3, ms);
+    float dBead = length(pj - vec2(0.0, beadY)) - beadR;
+    float dNeck = length(vec2(pj.x, pj.y - clamp(pj.y, 2.0, beadY))) - mix(1.2, 4.2, saturate(1.0 - (pj.y - 2.0) / max(beadY - 2.0, 1.0))) * neck;
+    float dJet = neck > 0.01 ? smin(dBead, dNeck, 3.0) : dBead;
+    vec4 jet = vec4(0.0);
+    if (beadR > 0.05 && dJet < 1.5) {
+        vec2 nb = (pj - vec2(0.0, beadY)) / max(beadR, 0.1);
+        float hl = exp(-dot(nb - vec2(-0.35, 0.40), nb - vec2(-0.35, 0.40)) / 0.10);
+        float rimB = smoothstep(-2.2, 0.0, dJet);
+        vec3 cb = mix(water * (dark > 0.5 ? 1.0 : 0.80), water * 0.45, rimB * 0.8);
+        cb = mix(cb, vec3(1.0), saturate(hl));
+        float ab = cover(dJet * g, u) * (0.42 + 0.45 * rimB + 0.5 * saturate(hl)) * (1.0 - smoothstep(0.6, 1.0, fly));
+        ab = saturate(ab);
+        jet = vec4(saturate(cb) * ab, ab);
+    }
+
+    // a soft shadow under the pool on a light page, a faint light behind it on a dark one
+    float sh = exp(-pow(max(dPool + 1.0, 0.0) / 4.5, 2.0)) * (dark > 0.5 ? 0.0 : 0.10) * poolA * saturate(dPool / 1.2 + 0.5);
+    vec4 back = vec4(vec3(0.0), sh);
+    return over(jet, over(pool, back)) * (1.0 - u.fade);
+}

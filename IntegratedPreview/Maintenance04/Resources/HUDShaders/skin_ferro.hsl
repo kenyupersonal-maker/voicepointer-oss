@@ -1,0 +1,102 @@
+// 磁流体（2026-11-10 新做，按「先定主题再反推样式」）。
+// 主题：一滴黑亮的磁流体，声音就是那块磁铁。由此反推：
+// - 材质：纯黑、很亮的液体，颜色全部来自它倒映的影棚灯光；
+// - 说话时动的是液体自己：声音越大，表面顶出来的尖刺越高，轮廓也跟着长出刺；安静时是一颗光滑的黑珠；
+// - 往上推：磁铁到了上面，液体被往上吸，拉成一滴朝上的水滴，刺收回去；松手这一滴飞上去；
+// - 往下推：磁铁拿开了，液体塌成一摊又扁又宽的小水洼；松手缩没了。
+
+// Offset from the nearest point of a hexagonal lattice with pitch s.
+vec2 fe_cell(vec2 p, float s) {
+    vec2 a = vec2(s, s * 1.7320508);
+    vec2 hh = a * 0.5;
+    vec2 g1 = p - a * floor(p / a) - hh;
+    vec2 p2 = p - hh;
+    vec2 g2 = p2 - a * floor(p2 / a) - hh;
+    return dot(g1, g1) < dot(g2, g2) ? g1 : g2;
+}
+
+// A drop: radius r1 at the origin tapering to r2 at height h (h > r1 - r2).
+float fe_tear(vec2 p, float r1, float r2, float h) {
+    p.x = abs(p.x);
+    float b = (r1 - r2) / h;
+    float a = sqrt(1.0 - b * b);
+    float k = dot(p, vec2(-b, a));
+    if (k < 0.0) return length(p) - r1;
+    if (k > a * h) return length(p - vec2(0.0, h)) - r2;
+    return dot(p, vec2(a, b)) - r1;
+}
+
+// (spike profile 0…1 at q, the spike height in points)
+vec2 fe_spikes(vec2 q, float ms, float mc, UARG u) {
+    float pitch = 9.5;
+    vec2 ql = rot2(u.time * 0.05) * q;
+    vec2 gq = fe_cell(ql, pitch);
+    vec2 id = floor((ql - gq) / pitch * 2.0 + 0.5);
+    float sp = pow(saturate(1.0 - length(gq) / (0.56 * pitch)), 1.5);
+    float live = 0.78 + 0.22 * sin(u.time * 7.0 + hash12(id) * TAU);
+    float A = (0.6 + 8.5 * u.level + 4.0 * u.peak) * live * (1.0 - 0.75 * ms) * (1.0 - mc);
+    return vec2(sp, A);
+}
+
+float fe_sdf(vec2 q, float ms, float mc, UARG u) {
+    float R = 23.0;
+    float round0 = length(q) - R;
+    float tear = smin(length(q) - R * 0.80, fe_tear(q - vec2(0.0, 4.0), 15.0, 2.2, 18.0 + 20.0 * ms), 7.0);
+    float puddle = length(vec2(q.x / 1.24, (q.y + 5.0) / 0.80)) - R * (1.0 + 0.05 * gnoise(q * 0.09 + u.seed * 7.0)) ;
+    float d = mix(mix(round0, tear, ms), puddle, mc);
+    vec2 sk = fe_spikes(q, ms, mc, u);
+    return d - 0.55 * sk.y * sk.x;
+}
+
+float fe_height(vec2 q, float ms, float mc, UARG u) {
+    float e = max(-fe_sdf(q, ms, mc, u), 0.0);
+    float B = mix(mix(20.0, 12.0, ms), 26.0, mc);
+    float x = saturate(e / B);
+    float z = B * sqrt(max(x * (2.0 - x), 0.0)) * mix(1.0, 0.30, mc);
+    vec2 sk = fe_spikes(q, ms, mc, u);
+    return z + sk.y * sk.x * smoothstep(0.0, 5.0, e);
+}
+
+vec3 fe_env(vec3 r, float dark) {
+    // a dark studio: a big softbox overhead, a strip on the right, a faint floor bounce
+    vec3 c = vec3(0.020, 0.022, 0.028);
+    c += vec3(0.95, 0.97, 1.0) * smoothstep(0.30, 0.80, r.y) * (1.0 - smoothstep(0.55, 0.95, abs(r.x + 0.15)));
+    c += vec3(0.55, 0.58, 0.64) * (1.0 - smoothstep(0.04, 0.10, abs(r.x - 0.72))) * (1.0 - smoothstep(0.25, 0.55, abs(r.y)));
+    c += vec3(0.10, 0.10, 0.11) * smoothstep(-0.2, -0.9, r.y);
+    return c;
+}
+
+vec4 skin_ferro(vec2 p, UARG u) {
+    float dark = u.dark;
+    float S = u.send, C = u.cancel;
+    float ms = hud_smoother(0.0, 1.0, snapSend(u));
+    float mc = hud_smoother(0.0, 1.0, snapCancel(u));
+    if (S > 0.0) { ms = 1.0; mc = 0.0; }
+    if (C > 0.0) { mc = 1.0; ms = 0.0; }
+    float fly = easeInCubic(saturate(S / 0.85));
+    float shrink = easeInCubic(saturate(C / 0.85));
+    float k = max((0.2 + 0.8 * u.appear) * (1.0 - shrink) * (1.0 - 0.45 * fly), 0.001);
+    vec2 q = (p - vec2(0.0, 160.0 * fly)) / k;
+    if (length(q) > 75.0) return vec4(0.0);
+    float d = fe_sdf(q, ms, mc, u) * k;
+
+    // on a dark page a black drop needs a little light behind its edge
+    float halo = exp(-max(d, 0.0) / 5.0) * (dark > 0.5 ? 0.20 : 0.0) * (1.0 - smoothstep(0.5, 1.0, fly));
+    vec4 back = vec4(vec3(0.72, 0.76, 0.86) * halo, halo * 0.6);
+    // and on a light page a soft shadow under it
+    float shA = exp(-pow(max(d + 2.0 * k, 0.0) / (5.0 * k), 2.0)) * (dark > 0.5 ? 0.0 : 0.16) * (1.0 - smoothstep(0.2, 0.8, fly));
+    back = over(back, vec4(vec3(0.0), shA));
+    if (d > 1.5) return back * (1.0 - u.fade);
+
+    float e = 0.6;
+    float zx = fe_height(q + vec2(e, 0.0), ms, mc, u) - fe_height(q - vec2(e, 0.0), ms, mc, u);
+    float zy = fe_height(q + vec2(0.0, e), ms, mc, u) - fe_height(q - vec2(0.0, e), ms, mc, u);
+    vec3 n = normalize(vec3(-zx / (2.0 * e), -zy / (2.0 * e), 1.0));
+    vec3 rd = reflect(vec3(0.0, 0.0, -1.0), n);
+    float F = 0.06 + 0.94 * pow(1.0 - n.z, 3.0);
+    vec3 col = vec3(0.012, 0.012, 0.016) + fe_env(rd, dark) * mix(0.55, 1.0, F);
+    vec3 Hd = normalize(normalize(vec3(-0.45, 0.60, 0.66)) + vec3(0.0, 0.0, 1.0));
+    col += vec3(1.0) * pow(max(dot(n, Hd), 0.0), 90.0) * 1.4;
+    float a = cover(d, u);
+    return over(vec4(saturate(col) * a, a), back) * (1.0 - u.fade);
+}

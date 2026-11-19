@@ -1,0 +1,188 @@
+// 小圆盘（2026-11-10，Ken：大圆盘的小号，要真 3D 的玻璃，不要毛玻璃模糊）。清透 / 磨砂两款共用这一份。
+// 按物理材质的思路画一块带圆角厚边的玻璃片（俯视），每个像素：
+// - 形状：圆片的 2D 距离场 + 高度（边缘是四分之一圆的倒角，中间略鼓）→ 表面法线；
+// - 透射（transmission）：视线按法线折射，穿过玻璃厚度落到后面的「影棚背板」上取色，背板上有柔光条和
+//   中间的语音条 / 符号，所以边缘会把它们拉弯、放大；RGB 各用不同折射率 → 边缘一圈色散（dispersion）；
+// - 粗糙度（roughness）：清透 0；磨砂约 0.3，用一圈抖动采样把透过去的东西糊开，玻璃更不透；
+// - 厚度与吸收（thickness / attenuation）：穿过的玻璃越厚越带一点颜色，往上推偏绿、往下推偏红；
+// - 反射：菲涅尔，边缘反射虚拟影棚（顶部大柔光箱、右侧条灯、左侧暖色轮廓光），再加主光的锐利高光；
+// - 页面：玻璃下一圈柔和投影，投影里有玻璃聚出来的焦散亮斑；指向时朝那一侧有彩色的光。
+// 动作：说话时五根语音条跳；往上推，语音条一边转一边缩小，推到位一笔画出 ↑（路径生长）；往下推画出 ↶（撤回）；
+// 圆片始终是正圆（只随声音轻轻呼吸）；松手发送时往上飞走，撤回时符号转一下、玻璃缩没。
+
+struct GDState { float m; float dir; float grow; float bars; float fly; float shrink; float spin; float alpha; };
+
+GDState gd_state(UARG u) {
+    GDState s;
+    float as = aimSend(u), ac = aimCancel(u);
+    s.dir = as >= ac ? 1.0 : -1.0;
+    float m = max(as, ac);
+    if (u.send > 0.0) { s.dir = 1.0; m = 1.0; }
+    if (u.cancel > 0.0) { s.dir = -1.0; m = 1.0; }
+    s.m = hud_smoother(0.02, 0.98, m);
+    s.grow = (u.send > 0.0 || u.cancel > 0.0) ? 1.0 : smoothstep(0.42, 0.95, m);
+    s.bars = 1.0 - smoothstep(0.22, 0.58, m);
+    s.fly = easeInCubic(saturate(u.send / 0.85));
+    s.shrink = easeInCubic(saturate(u.cancel / 0.85));
+    s.spin = easeInOut(saturate(u.cancel / 0.7));
+    s.alpha = (1.0 - smoothstep(0.55, 0.95, u.send)) * (1.0 - smoothstep(0.70, 1.0, u.cancel));
+    return s;
+}
+
+float gd_size(GDState s, UARG u) { return max((0.2 + 0.8 * u.appear) * (1.0 - s.shrink), 0.001); }
+// The disc stays a true circle while the symbol changes (Ken, 2026-11-10: it must not turn into an ellipse); only the
+// voice breathes its size a little, and Send carries it away upward.
+vec2 gd_center(GDState s) { return vec2(0.0, 150.0 * s.fly); }
+
+float gd_sdf(vec2 p, GDState s, UARG u) {
+    float g = gd_size(s, u);
+    vec2 q = p - gd_center(s);
+    float R = 40.0 * (1.0 + 0.025 * u.level + 0.015 * u.peak) * g;
+    return length(q) - R;
+}
+
+// Height of the glass above the page (points): a rounded bevel round the rim, a slight dome on the face.
+float gd_z(vec2 p, GDState s, UARG u) {
+    float g = gd_size(s, u);
+    float e = max(-gd_sdf(p, s, u), 0.0);
+    float H = 11.0 * g, B = 13.0 * g;
+    float x = saturate(e / B);
+    float z = H * sqrt(max(1.0 - (1.0 - x) * (1.0 - x), 0.0));
+    return z + 2.5 * g * smoothstep(B, B + 26.0 * g, e);
+}
+
+vec3 gd_normal(vec2 p, GDState s, UARG u) {
+    float h = 0.6;
+    float zx = gd_z(p + vec2(h, 0.0), s, u) - gd_z(p - vec2(h, 0.0), s, u);
+    float zy = gd_z(p + vec2(0.0, h), s, u) - gd_z(p - vec2(0.0, h), s, u);
+    return normalize(vec3(-zx / (2.0 * h), -zy / (2.0 * h), 1.0));
+}
+
+// What sits behind the glass, seen through it: a studio backdrop (soft gradient, a light streak) with the voice bars or
+// the symbol painted on it. b is in points round the disc centre.
+// .a is how much of the point is bars or symbol (they stay solid inside clear glass).
+vec4 gd_back(vec2 b, GDState s, UARG u) {
+    float dark = u.dark;
+    vec3 lo = dark > 0.5 ? vec3(0.035, 0.04, 0.055) : vec3(0.52, 0.55, 0.62);
+    vec3 hi = dark > 0.5 ? vec3(0.17, 0.18, 0.23) : vec3(0.93, 0.94, 0.97);
+    vec3 c = mix(lo, hi, smoothstep(-46.0, 40.0, b.y + 0.35 * b.x));
+    float streak = exp(-pow((b.x * 0.8 - b.y + 22.0) / 6.0, 2.0)) + 0.6 * exp(-pow((b.x * 0.8 - b.y - 30.0) / 4.0, 2.0));
+    c += (dark > 0.5 ? vec3(0.32, 0.34, 0.40) : vec3(0.22, 0.22, 0.24)) * streak;
+    float rings = 0.5 + 0.5 * cos(length(b) * 0.42);
+    c *= mix(1.0, 0.94 + 0.06 * rings, 0.6);
+    // painted symbols, lit from inside a little
+    vec3 green = vec3(0.07, 0.75, 0.11), red = vec3(1.0, 0.27, 0.23);
+    vec3 aimC = s.dir > 0.0 ? green : red;
+    vec2 q = b;
+    if (s.dir < 0.0) q = rot2(-s.spin * 2.4) * q;
+    float dBars = s.bars > 0.001 ? sym_bars(b, s.m, s.dir, u) : 1e5;
+    float dSym = s.grow > 0.0 ? (s.dir > 0.0 ? sym_up(q, s.grow) : sym_undo(q, s.grow)) : 1e5;
+    float barCover = saturate(0.5 - dBars * 2.0) * s.bars;
+    float symCover = saturate(0.5 - dSym * 2.0);
+    vec3 barC = mix(green, aimC, s.m);
+    c = mix(c, barC * 1.15, barCover);
+    c = mix(c, aimC * 1.2, symCover);
+    c += aimC * 0.35 * exp(-max(dSym, 0.0) / 2.5) * step(0.001, s.grow);
+    c += barC * 0.20 * exp(-max(dBars, 0.0) / 2.5) * s.bars;
+    return vec4(c, max(barCover, symCover));
+}
+
+// The virtual studio the glass reflects: room gradient, a big top softbox, a strip light on the right, a warm rim light.
+vec3 gd_env(vec3 d, float dark) {
+    vec3 top = dark > 0.5 ? vec3(0.20, 0.22, 0.27) : vec3(0.88, 0.90, 0.95);
+    vec3 bot = dark > 0.5 ? vec3(0.015, 0.02, 0.03) : vec3(0.30, 0.32, 0.38);
+    vec3 c = mix(bot, top, smoothstep(-0.45, 0.55, d.y));
+    vec2 sb = (d.xy - vec2(-0.22, 0.60)) / vec2(0.40, 0.15);
+    c += vec3(1.7) * (1.0 - smoothstep(0.75, 1.0, max(abs(sb.x), abs(sb.y))));
+    vec2 sr = (d.xy - vec2(0.78, 0.02)) / vec2(0.06, 0.42);
+    c += vec3(1.0) * (1.0 - smoothstep(0.65, 1.0, max(abs(sr.x), abs(sr.y))));
+    vec2 sl = (d.xy - vec2(-0.84, -0.22)) / vec2(0.05, 0.32);
+    c += vec3(0.60, 0.48, 0.36) * (1.0 - smoothstep(0.65, 1.0, max(abs(sl.x), abs(sl.y))));
+    return c;
+}
+
+vec4 gd_render(vec2 p, UARG u, float rough) {
+    GDState s = gd_state(u);
+    float dark = u.dark;
+    float light = dark > 0.5 ? 0.0 : 1.0;
+    vec2 c0 = gd_center(s);
+    float g = gd_size(s, u);
+    float d = gd_sdf(p, s, u);
+    vec3 green = vec3(0.07, 0.75, 0.11), red = vec3(1.0, 0.27, 0.23);
+    vec3 aimC = s.dir > 0.0 ? green : red;
+
+    // page: soft shadow with the caustic the glass focuses into it, and the coloured light toward the aimed side
+    float lift = (0.2 + 0.8 * u.appear) * (1.0 - s.fly) * (1.0 - s.shrink);
+    vec2 sq = (p - c0 - vec2(4.0, -9.0)) / (vec2(38.0, 33.0) * max(g, 0.05));
+    float shadow = exp(-dot(sq, sq) * 1.6) * lift;
+    vec2 cq = (p - c0 - vec2(3.0, -12.0)) / (vec2(11.0, 7.0) * max(g, 0.05));
+    float caustic = exp(-dot(cq, cq)) * lift;
+    float outside = saturate(d / 1.5 + 0.5);
+    vec4 back = light > 0.5
+        ? vec4(vec3(0.0), saturate(shadow * 0.16 - caustic * 0.10)) + vec4(vec3(1.0, 0.98, 0.93) * caustic * 0.12, caustic * 0.06)
+        : vec4(vec3(0.0), shadow * 0.34) + vec4(vec3(1.0, 0.97, 0.90) * caustic * 0.22, 0.0);
+    vec2 toward = normalize(p - c0 + vec2(0.0, 1e-3));
+    float side = saturate(0.35 + 0.65 * dot(toward, vec2(0.0, s.dir)));
+    float glow = exp(-max(d, 0.0) / 11.0) * s.m * side * s.alpha;
+    back = over(vec4(aimC * glow * (light > 0.5 ? 0.28 : 0.55), glow * (light > 0.5 ? 0.20 : 0.10)), back);
+    back *= outside;
+    if (d > 3.0) return back * (1.0 - u.fade);
+
+    float z = gd_z(p, s, u);
+    vec3 n = gd_normal(p, s, u);
+    vec3 I = vec3(0.0, 0.0, -1.0);
+    float ndv = max(n.z, 0.0);
+    float F = 0.04 + 0.96 * pow(1.0 - ndv, 5.0);
+    vec3 refl = gd_env(reflect(I, n), dark);
+
+    // transmission: refract into the glass, travel through it to the backdrop; one index per colour (dispersion)
+    float depth = z + 12.0 * g;
+    vec3 Tr = refract(I, n, 1.0 / 1.44);
+    vec3 Tg = refract(I, n, 1.0 / 1.47);
+    vec3 Tb = refract(I, n, 1.0 / 1.51);
+    vec2 b = p - c0;
+    vec2 oR = Tr.xy / max(-Tr.z, 0.25) * depth;
+    vec2 oG = Tg.xy / max(-Tg.z, 0.25) * depth;
+    vec2 oB = Tb.xy / max(-Tb.z, 0.25) * depth;
+    vec4 mid = gd_back(b + oG, s, u);
+    vec3 refr = vec3(gd_back(b + oR, s, u).r, mid.g, gd_back(b + oB, s, u).b);
+    float ink = mid.a;
+    if (rough > 0.5) {
+        // roughness ~0.3: a ring of jittered samples smears what is behind (frosted), dispersion mostly lost
+        vec4 acc = vec4(refr, ink) * 0.25;
+        float spin = hash12(p * 0.37 + u.seed) * TAU;
+        for (int k = 0; k < 5; k++) {
+            float ang = spin + float(k) * 1.2566;
+            vec2 j = vec2(cos(ang), sin(ang)) * (3.0 + 2.5 * float(k & 1)) * g;
+            acc += gd_back(b + oG + j, s, u) * 0.15;
+        }
+        refr = mix(acc.rgb, dark > 0.5 ? vec3(0.30, 0.32, 0.37) : vec3(0.96, 0.97, 0.99), 0.22);
+        ink = acc.a;
+    }
+    // attenuation: thicker glass tints a little; leaning tints toward the aimed colour
+    vec3 glassC = mix(vec3(0.95, 0.98, 1.0), aimC, 0.30 * s.m);
+    refr *= exp(-(vec3(1.0) - glassC) * (2.0 * z) * 0.035);
+
+    vec3 col = mix(refr, refl, F);
+    // key-light glint, a broad sheen, and the light gathered inside the far side of the bevel
+    vec3 key = normalize(vec3(-0.42, 0.62, 0.66));
+    float nh = max(dot(n, normalize(key - I)), 0.0);
+    col += vec3(1.0) * (rough < 0.5 ? (1.8 * pow(nh, 260.0) + 0.22 * pow(nh, 26.0)) : (0.55 * pow(nh, 40.0)));
+    float e = -d;
+    float far = saturate(-dot(n.xy, key.xy) / max(length(n.xy), 1e-3)) * pow(1.0 - ndv, 1.4);
+    col += (dark > 0.5 ? vec3(0.50, 0.55, 0.62) : vec3(0.30, 0.32, 0.36)) * far * smoothstep(1.0, 4.0, e) * (1.0 - smoothstep(6.0, 12.0, e));
+    // the aimed side catches the coloured light on its edge
+    vec2 nx = n.xy / max(length(n.xy), 1e-4);
+    col += aimC * s.m * 0.9 * pow(1.0 - ndv, 2.0) * saturate(dot(nx, vec2(0.0, s.dir)));
+    // dark total-internal-reflection band right at the rim
+    col = mix(col, dark > 0.5 ? vec3(0.0) : vec3(0.12, 0.14, 0.18), 0.50 * exp(-pow((e - 0.9) / 0.8, 2.0)));
+    col = saturate(col);
+    // see-through in the middle, solid glass toward the rim; frosted glass lets less through
+    float a = cover(d, u) * mix(rough < 0.5 ? 0.58 : 0.88, 0.97, pow(1.0 - ndv, 0.7));
+    a = mix(a, cover(d, u) * 0.97, ink);
+    a *= s.alpha;
+    return over(vec4(col * a, a), back) * (1.0 - u.fade);
+}
+
+vec4 skin_glassdisc(vec2 p, UARG u) { return gd_render(p, u, 0.0); }
+vec4 skin_frostdisc(vec2 p, UARG u) { return gd_render(p, u, 1.0); }

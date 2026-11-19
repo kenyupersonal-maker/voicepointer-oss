@@ -1,0 +1,83 @@
+// 镜面铬（2026-11-10 重做；原来是一面圆镜里翻滚的黑白大理石纹，Ken：一般）。
+// 一颗真正的镜面铬球：每个像素按球面法线把视线反射出去，到一个虚拟影棚里取色（上面大柔光箱、两侧条灯、地平线那道
+// 暗带、下面偏暖的地面），所以它看起来像一颗抛光的金属球，倒映着整个房间。说话时球面泛起一圈圈涟漪，倒影跟着晃。
+// 小球的符号语言：中间的语音条从球面凸起来；往上推，语音条转着缩小，推到位一笔凸起 ↑（绿）；往下推凸起 ↶（红）。
+// 球始终是正圆。发送时往上飞走，撤回时缩没。
+
+vec3 ch_env(vec3 r, float dark) {
+    vec3 sky = dark > 0.5 ? vec3(0.42, 0.45, 0.52) : vec3(0.88, 0.91, 0.97);
+    vec3 band = dark > 0.5 ? vec3(0.015, 0.018, 0.025) : vec3(0.07, 0.08, 0.10);
+    vec3 ground = dark > 0.5 ? vec3(0.16, 0.14, 0.12) : vec3(0.52, 0.47, 0.42);
+    float y = r.y;
+    vec3 c = y > -0.02 ? mix(band, sky, smoothstep(-0.02, 0.45, y)) : mix(band, ground, smoothstep(-0.02, -0.55, y));
+    // big top softbox
+    vec2 sb = (r.xz - vec2(-0.10, 0.20)) / vec2(0.55, 0.35);
+    c += vec3(1.9) * step(0.55, y) * (1.0 - smoothstep(0.80, 1.0, max(abs(sb.x), abs(sb.y))));
+    // strip lights left and right
+    float stripR = (1.0 - smoothstep(0.03, 0.06, abs(r.x - 0.80))) * (1.0 - smoothstep(0.35, 0.50, abs(y - 0.05)));
+    float stripL = (1.0 - smoothstep(0.02, 0.05, abs(r.x + 0.86))) * (1.0 - smoothstep(0.25, 0.40, abs(y + 0.05)));
+    c += vec3(1.3) * stripR + vec3(0.9, 0.80, 0.70) * stripL;
+    return c;
+}
+
+float ch_height(vec2 q, float R, vec4 st, UARG u) {
+    float r2 = dot(q, q);
+    float z = sqrt(max(R * R - r2, 0.0));
+    // voice ripples running outward over the surface
+    float r = sqrt(r2);
+    float A = 0.55 * u.level + 0.55 * u.peak;
+    z += A * sin(r * 0.55 - u.time * 9.0) * smoothstep(4.0, 14.0, r) * (1.0 - smoothstep(R - 8.0, R, r));
+    // the mark is raised out of the surface
+    vec2 mk = sym_mark(q, st, u);
+    z += 2.6 * (1.0 - smoothstep(-1.2, 1.6, mk.x)) * (mk.y > 0.5 ? 1.0 : st.z);
+    return z;
+}
+
+vec4 skin_liquidchrome(vec2 p, UARG u) {
+    vec4 st = sym_state(u);
+    float dark = u.dark;
+    float fly = easeInCubic(saturate(u.send / 0.85));
+    float shrink = easeInCubic(saturate(u.cancel / 0.85));
+    float g = max((0.2 + 0.8 * u.appear) * (1.0 - shrink), 0.001);
+    vec2 c0 = vec2(0.0, 150.0 * fly);
+    float R = 37.0 * g * (1.0 + 0.02 * u.level);
+    vec2 q = p - c0;
+    float d = length(q) - R;
+    vec3 aimC = st.y > 0.0 ? vec3(0.20, 0.90, 0.42) : vec3(1.0, 0.36, 0.36);
+
+    // page: contact shadow and a soft reflection of the lit side, plus the coloured light toward the aimed side
+    vec2 sq = (q - vec2(3.0, -7.0)) / (vec2(36.0, 30.0) * g);
+    float shadow = exp(-dot(sq, sq) * 1.7) * (1.0 - fly);
+    vec4 back = vec4(vec3(0.0), shadow * (dark > 0.5 ? 0.38 : 0.20));
+    float side = saturate(0.35 + 0.65 * dot(normalize(q + vec2(0.0, 1e-3)), vec2(0.0, st.y)));
+    float glow = exp(-max(d, 0.0) / 10.0) * st.x * side * (1.0 - fly) * (1.0 - shrink);
+    back = over(vec4(aimC * glow * (dark > 0.5 ? 0.55 : 0.30), glow * (dark > 0.5 ? 0.10 : 0.22)), back);
+    back *= saturate(d / 1.5 + 0.5);
+    if (d > 2.0) return back * (1.0 - u.fade);
+
+    // surface normal from the height field (sphere + ripples + raised mark)
+    float h = 0.6;
+    float zx = ch_height(q + vec2(h, 0.0), R, st, u) - ch_height(q - vec2(h, 0.0), R, st, u);
+    float zy = ch_height(q + vec2(0.0, h), R, st, u) - ch_height(q - vec2(0.0, h), R, st, u);
+    vec3 n = normalize(vec3(-zx / (2.0 * h), -zy / (2.0 * h), 1.0));
+    // near the silhouette the finite difference breaks down: blend to the true sphere normal
+    vec3 ns = vec3(q / R, sqrt(max(1.0 - dot(q, q) / (R * R), 0.0)));
+    n = normalize(mix(ns, n, smoothstep(0.0, 3.0, -d)));
+    vec3 rd = reflect(vec3(0.0, 0.0, -1.0), n);
+    // chrome: a slightly cool silver, reflectance rising toward the rim
+    float ndv = max(n.z, 0.0);
+    vec3 metal = vec3(0.93, 0.95, 0.98);
+    vec3 col = ch_env(rd, dark) * metal * (0.82 + 0.18 * pow(1.0 - ndv, 3.0));
+    // the raised mark carries its colour (a lacquer inlay)
+    vec2 mk = sym_mark(q, st, u);
+    float ink = (1.0 - smoothstep(-0.6, 0.8, mk.x)) * (mk.y > 0.5 ? 1.0 : st.z);
+    vec3 markC = mk.y > 0.5 ? aimC : mix(vec3(0.07, 0.75, 0.11), aimC, st.x);
+    col = mix(col, markC * (0.55 + 0.65 * luma(col)), 0.85 * ink);
+    // a whisper of the aimed colour in the reflections
+    col = mix(col, col * mix(vec3(1.0), aimC * 1.3, 0.35), st.x * 0.5);
+    // crisp dark rim where the sphere turns away
+    col *= 1.0 - 0.45 * exp(-pow((-d) / 1.2, 2.0));
+    col = saturate(col);
+    float a = cover(d, u) * (1.0 - smoothstep(0.55, 0.95, u.send)) * (1.0 - smoothstep(0.7, 1.0, u.cancel));
+    return over(vec4(col * a, a), back) * (1.0 - u.fade);
+}

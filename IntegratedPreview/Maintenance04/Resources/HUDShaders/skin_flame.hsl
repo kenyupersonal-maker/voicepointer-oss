@@ -1,0 +1,85 @@
+// 火苗：一朵悬着的小火苗。说话时火苗窜高、跳得更欢，还会蹦出火星；
+// 往上推火苗拉长变亮、火星往 Send 飞；往下推火苗被压低、左右摇晃；
+// 发送时整团火冲上去；撤回时像被吹灭：火苗一歪熄掉，冒出一缕青烟。
+
+vec3 fl_ramp(float f, float light) {
+    vec3 red = light > 0.5 ? vec3(0.86, 0.20, 0.04) : vec3(0.95, 0.30, 0.06);
+    vec3 orange = light > 0.5 ? vec3(0.98, 0.50, 0.08) : vec3(1.00, 0.58, 0.14);
+    vec3 yellow = light > 0.5 ? vec3(1.00, 0.80, 0.25) : vec3(1.00, 0.88, 0.45);
+    vec3 core = light > 0.5 ? vec3(1.00, 0.95, 0.72) : vec3(1.00, 0.99, 0.90);
+    if (f < 0.35) return mix(red, orange, f / 0.35);
+    if (f < 0.65) return mix(orange, yellow, (f - 0.35) / 0.30);
+    return mix(yellow, core, saturate((f - 0.65) / 0.30));
+}
+
+vec4 skin_flame(vec2 p, UARG u) {
+    float s = aimSend(u), c = aimCancel(u);
+    float S = u.send, C = u.cancel;
+    float g = 0.2 + 0.8 * u.appear;
+    float L = u.level, pk = u.peak, t = u.time;
+    float light = u.dark > 0.5 ? 0.0 : 1.0;
+    float blow = easeInOut(saturate(C / 0.40));
+    float smokeT = saturate((C - 0.25) / 0.75);
+    float shoot = easeInCubic(saturate(S / 0.75));
+
+    vec2 base = vec2(0.0, -16.0);
+    float H = (36.0 + 16.0 * L + 8.0 * pk + 12.0 * s - 10.0 * c) * g * (1.0 - 0.9 * blow);
+    float W = (12.5 + 2.5 * L - 2.5 * s + 1.5 * c) * g * (1.0 - 0.7 * blow);
+    vec2 q = p - base - vec2(0.0, 165.0 * shoot);
+    // lean: nervous sway when aiming Cancel, a hard lean when blown out
+    float lean = 0.30 * c * sin(t * 9.0) + 1.1 * blow + 0.06 * sin(t * 2.3);
+    q.x -= lean * max(q.y, 0.0) * 0.5;
+    float y01 = q.y / max(H, 0.001);
+    // turbulence rising through the flame
+    float n = fbm3(vec2(q.x / 6.0, q.y / 8.0 - t * (2.4 + 2.2 * L)));
+    q.x += n * (2.0 + 3.5 * L + 2.0 * s) * saturate(y01 + 0.1);
+    float vr = q.y > H * 0.30 ? 0.72 : 0.34;
+    float hw = W * mix(1.0, 0.10, saturate(y01 * 1.05));
+    float ell = length(vec2(q.x / max(hw, 0.001), (q.y - H * 0.30) / max(H * vr, 0.001)));
+    float f = saturate(1.0 - ell);
+    f *= 1.0 + 0.25 * (n + 0.2);
+    f = saturate(f);
+    vec3 col = fl_ramp(f, light);
+    // blue root
+    float root = saturate(1.0 - y01 * 6.0) * smoothstep(0.02, 0.25, f) * (1.0 - smoothstep(0.55, 0.8, f));
+    col = mix(col, light > 0.5 ? vec3(0.20, 0.40, 0.95) : vec3(0.35, 0.55, 1.0), 0.55 * root);
+    // send tint: brighter, a touch of green in the tip to match Send
+    col = mix(col, vec3(0.55, 1.0, 0.55), 0.25 * s * saturate(y01));
+    float a = smoothstep(0.0, 0.22, f);
+    a *= 1.0 - smoothstep(0.55, 0.95, S);
+    vec4 flame = light > 0.5 ? vec4(col * a, a) : vec4(col * a, a * 0.55);
+    // glow
+    vec2 gq = (p - base - vec2(0.0, H * 0.35 + 165.0 * shoot)) / vec2(W * 1.7 + 5.0, H * 0.62 + 5.0);
+    float glow = exp(-dot(gq, gq) * 1.6) * (0.35 + 0.35 * L + 0.2 * s) * g * (1.0 - blow) * (1.0 - smoothstep(0.6, 1.0, S));
+    vec3 gc = vec3(1.0, 0.55, 0.15);
+    vec4 halo = light > 0.5 ? vec4(gc * glow * 0.30, glow * 0.22) : vec4(gc * glow * 0.45, 0.0);
+    // sparks
+    vec4 sparks = vec4(0.0);
+    float nSpark = 3.0 + 7.0 * L + 8.0 * s;
+    for (int k = 0; k < 14; k++) {
+        float fk = float(k);
+        if (fk >= nSpark) break;
+        float h1 = hash11(fk * 3.7 + 1.0), h2 = hash11(fk * 5.3 + 2.0);
+        float life = mod(t * (0.6 + 0.6 * h1) + h2, 1.0);
+        vec2 sp = base + vec2((h1 - 0.5) * W * 1.4 + sin(t * 3.0 + fk) * 3.0 * life, H * 0.55 + life * (38.0 + 30.0 * s + 20.0 * L));
+        sp.y += 165.0 * shoot;
+        float dd = length(p - sp) - 0.9 * (1.0 - life);
+        float sa = cover(dd, u) * (1.0 - life) * (1.0 - blow);
+        vec3 scol = mix(vec3(1.0, 0.85, 0.35), vec3(1.0, 0.45, 0.10), life);
+        sparks = over(vec4(scol * sa, sa * (light > 0.5 ? 1.0 : 0.6)), sparks);
+    }
+    // smoke after blow-out
+    vec4 smoke = vec4(0.0);
+    if (smokeT > 0.0) {
+        vec2 sq = p - base - vec2(0.0, 2.0);
+        float y = sq.y;
+        float curl = 5.0 * sin(y * 0.13 - t * 3.0) * saturate(y / 40.0);
+        float wdt = 1.6 + y * 0.10;
+        float den = exp(-pow((sq.x - curl) / wdt, 2.0)) * smoothstep(-2.0, 6.0, y) * (1.0 - smoothstep(10.0 + 60.0 * smokeT, 20.0 + 70.0 * smokeT, y));
+        den *= sin(PI * smokeT) * 0.8;
+        vec3 sc = light > 0.5 ? vec3(0.45, 0.45, 0.48) : vec3(0.70, 0.70, 0.74);
+        smoke = vec4(sc * den * 0.6, den * 0.6);
+    }
+    vec4 outc = over(flame, over(sparks, over(halo, smoke)));
+    return outc * (1.0 - u.fade);
+}

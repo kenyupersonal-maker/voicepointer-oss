@@ -1,0 +1,305 @@
+{
+  "schema_version": 1,
+  "verified_at": "2026-10-02",
+  "license": "Apache-2.0",
+  "license_text": "LICENSE-Qwen-Apache-2.0.txt",
+  "license_sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+  "models": [
+    {
+      "id": "qwen06-rolling",
+      "version": "5eb1441",
+      "sourceAvailable": true,
+      "files": [
+        {
+          "name": "chat_template.json",
+          "bytes": 1161,
+          "sha256": "75a8cfca24f00de72d796fbfed6858fc9614ef3dabd8696684cc3bc03a9c58ff",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-0.6B/repo?Revision=3b885f72b1733a6a50dc17a597fb4135c3d656a0&FilePath=chat_template.json",
+            "https://huggingface.co/Qwen/Qwen3-ASR-0.6B/resolve/5eb144179a02acc5e5ba31e748d22b0cf3e303b0/chat_template.json"
+          ]
+        },
+        {
+          "name": "config.json",
+          "bytes": 6193,
+          "sha256": "76d3ae4601ce939830b2517f4a6cadb86cc51316c3900af6b020b051c21a478c",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-0.6B/repo?Revision=3b885f72b1733a6a50dc17a597fb4135c3d656a0&FilePath=config.json",
+            "https://huggingface.co/Qwen/Qwen3-ASR-0.6B/resolve/5eb144179a02acc5e5ba31e748d22b0cf3e303b0/config.json"
+          ]
+        },
+        {
+          "name": "merges.txt",
+          "bytes": 1671853,
+          "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-0.6B/repo?Revision=3b885f72b1733a6a50dc17a597fb4135c3d656a0&FilePath=merges.txt",
+            "https://huggingface.co/Qwen/Qwen3-ASR-0.6B/resolve/5eb144179a02acc5e5ba31e748d22b0cf3e303b0/merges.txt"
+          ]
+        },
+        {
+          "name": "model.safetensors",
+          "bytes": 1876091704,
+          "sha256": "79d6cbd4c98c7bbffe9db2edac07f56cd6637d0d5944b27f6c2b8353840323ea",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-0.6B/repo?Revision=3b885f72b1733a6a50dc17a597fb4135c3d656a0&FilePath=model.safetensors",
+            "https://huggingface.co/Qwen/Qwen3-ASR-0.6B/resolve/5eb144179a02acc5e5ba31e748d22b0cf3e303b0/model.safetensors"
+          ]
+        },
+        {
+          "name": "preprocessor_config.json",
+          "bytes": 330,
+          "sha256": "45e120a4eda2c20c5d7f2ea9354e63536bf35e27aa573fb7cdf78017b378770d",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-0.6B/repo?Revision=3b885f72b1733a6a50dc17a597fb4135c3d656a0&FilePath=preprocessor_config.json",
+            "https://huggingface.co/Qwen/Qwen3-ASR-0.6B/resolve/5eb144179a02acc5e5ba31e748d22b0cf3e303b0/preprocessor_config.json"
+          ]
+        },
+        {
+          "name": "tokenizer_config.json",
+          "bytes": 12487,
+          "sha256": "4942d005604266809309cabc9f4e9cb89ce855d59b14681fdc0e1cc62ea26c4c",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-0.6B/repo?Revision=3b885f72b1733a6a50dc17a597fb4135c3d656a0&FilePath=tokenizer_config.json",
+            "https://huggingface.co/Qwen/Qwen3-ASR-0.6B/resolve/5eb144179a02acc5e5ba31e748d22b0cf3e303b0/tokenizer_config.json"
+          ]
+        },
+        {
+          "name": "vocab.json",
+          "bytes": 2776833,
+          "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-0.6B/repo?Revision=3b885f72b1733a6a50dc17a597fb4135c3d656a0&FilePath=vocab.json",
+            "https://huggingface.co/Qwen/Qwen3-ASR-0.6B/resolve/5eb144179a02acc5e5ba31e748d22b0cf3e303b0/vocab.json"
+          ]
+        }
+      ],
+      "upstream": "Qwen/Qwen3-ASR-0.6B",
+      "hf_revision": "5eb144179a02acc5e5ba31e748d22b0cf3e303b0",
+      "ms_revision": "3b885f72b1733a6a50dc17a597fb4135c3d656a0",
+      "evidence": "anonymous_metadata_and_config_head_200"
+    },
+    {
+      "id": "qwen17-rolling",
+      "version": "7278e1e-8bit-v1",
+      "sourceAvailable": true,
+      "files": [
+        {
+          "name": "README.md",
+          "bytes": 57456,
+          "sha256": "5058416891bc47a2051557765997e8c42f8eb78a0e33c3e775bd17d4b0ba4d50",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-1.7B/repo?Revision=a04930dbe5419bfee073f7cade734f572689a3a8&FilePath=README.md",
+            "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/README.md"
+          ]
+        },
+        {
+          "name": "chat_template.json",
+          "bytes": 1161,
+          "sha256": "75a8cfca24f00de72d796fbfed6858fc9614ef3dabd8696684cc3bc03a9c58ff",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-1.7B/repo?Revision=a04930dbe5419bfee073f7cade734f572689a3a8&FilePath=chat_template.json",
+            "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/chat_template.json"
+          ]
+        },
+        {
+          "name": "config.json",
+          "bytes": 6194,
+          "sha256": "2e74a751548b8ad7d7526d29365ad8144c345d8b412b1152d25dc6698452712f",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-1.7B/repo?Revision=a04930dbe5419bfee073f7cade734f572689a3a8&FilePath=config.json",
+            "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/config.json"
+          ]
+        },
+        {
+          "name": "generation_config.json",
+          "bytes": 142,
+          "sha256": "1da527824d81e07118facff437e03f2e24a23311e3bdeb2368973fe77e5f275c",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-1.7B/repo?Revision=a04930dbe5419bfee073f7cade734f572689a3a8&FilePath=generation_config.json",
+            "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/generation_config.json"
+          ]
+        },
+        {
+          "name": "merges.txt",
+          "bytes": 1671853,
+          "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-1.7B/repo?Revision=a04930dbe5419bfee073f7cade734f572689a3a8&FilePath=merges.txt",
+            "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/merges.txt"
+          ]
+        },
+        {
+          "name": "model-00001-of-00002.safetensors",
+          "bytes": 4220320824,
+          "sha256": "a4cd1f1a04d90b757dc7f7dd26254e69a013b19e80efe590a83c6a3bde8608d6",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-1.7B/repo?Revision=a04930dbe5419bfee073f7cade734f572689a3a8&FilePath=model-00001-of-00002.safetensors",
+            "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/model-00001-of-00002.safetensors"
+          ]
+        },
+        {
+          "name": "model-00002-of-00002.safetensors",
+          "bytes": 478200688,
+          "sha256": "6e0b9d9e09e2e0238e7ef3cc8a484ab387e91b90f1900bedf88bc92d7929ccfc",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-1.7B/repo?Revision=a04930dbe5419bfee073f7cade734f572689a3a8&FilePath=model-00002-of-00002.safetensors",
+            "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/model-00002-of-00002.safetensors"
+          ]
+        },
+        {
+          "name": "model.safetensors.index.json",
+          "bytes": 64821,
+          "sha256": "f994739fe38e5210b9e3e8ce6c6307315e2ceac3cb630e7b7414d69dce520f60",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-1.7B/repo?Revision=a04930dbe5419bfee073f7cade734f572689a3a8&FilePath=model.safetensors.index.json",
+            "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/model.safetensors.index.json"
+          ]
+        },
+        {
+          "name": "preprocessor_config.json",
+          "bytes": 330,
+          "sha256": "45e120a4eda2c20c5d7f2ea9354e63536bf35e27aa573fb7cdf78017b378770d",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-1.7B/repo?Revision=a04930dbe5419bfee073f7cade734f572689a3a8&FilePath=preprocessor_config.json",
+            "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/preprocessor_config.json"
+          ]
+        },
+        {
+          "name": "tokenizer_config.json",
+          "bytes": 12487,
+          "sha256": "4942d005604266809309cabc9f4e9cb89ce855d59b14681fdc0e1cc62ea26c4c",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-1.7B/repo?Revision=a04930dbe5419bfee073f7cade734f572689a3a8&FilePath=tokenizer_config.json",
+            "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/tokenizer_config.json"
+          ]
+        },
+        {
+          "name": "vocab.json",
+          "bytes": 2776833,
+          "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+          "urls": [
+            "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ASR-1.7B/repo?Revision=a04930dbe5419bfee073f7cade734f572689a3a8&FilePath=vocab.json",
+            "https://huggingface.co/Qwen/Qwen3-ASR-1.7B/resolve/7278e1e70fe206f11671096ffdd38061171dd6e5/vocab.json"
+          ]
+        }
+      ],
+      "upstream": "Qwen/Qwen3-ASR-1.7B",
+      "hf_revision": "7278e1e70fe206f11671096ffdd38061171dd6e5",
+      "ms_revision": "a04930dbe5419bfee073f7cade734f572689a3a8",
+      "evidence": "official_raw_metadata_200_local_conversion_required",
+      "source_files": {
+        "README.md": "5058416891bc47a2051557765997e8c42f8eb78a0e33c3e775bd17d4b0ba4d50",
+        "chat_template.json": "75a8cfca24f00de72d796fbfed6858fc9614ef3dabd8696684cc3bc03a9c58ff",
+        "config.json": "2e74a751548b8ad7d7526d29365ad8144c345d8b412b1152d25dc6698452712f",
+        "generation_config.json": "1da527824d81e07118facff437e03f2e24a23311e3bdeb2368973fe77e5f275c",
+        "merges.txt": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+        "model-00001-of-00002.safetensors": "a4cd1f1a04d90b757dc7f7dd26254e69a013b19e80efe590a83c6a3bde8608d6",
+        "model-00002-of-00002.safetensors": "6e0b9d9e09e2e0238e7ef3cc8a484ab387e91b90f1900bedf88bc92d7929ccfc",
+        "model.safetensors.index.json": "f994739fe38e5210b9e3e8ce6c6307315e2ceac3cb630e7b7414d69dce520f60",
+        "preprocessor_config.json": "45e120a4eda2c20c5d7f2ea9354e63536bf35e27aa573fb7cdf78017b378770d",
+        "tokenizer_config.json": "4942d005604266809309cabc9f4e9cb89ce855d59b14681fdc0e1cc62ea26c4c",
+        "vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+      },
+      "quantization": {
+        "bits": 8,
+        "group_size": 64,
+        "scope": "all_supported_layers"
+      },
+      "bundled_derivative_files": [
+        {
+          "name": "LICENSE",
+          "bytes": 11358,
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30",
+          "urls": []
+        },
+        {
+          "name": "NOTICE",
+          "bytes": 261,
+          "sha256": "8c1993b0bce6353021ddc314a50b6809bc63a8f2a2b31c87d6e6d0a249aa36e0",
+          "urls": []
+        },
+        {
+          "name": "README.md",
+          "bytes": 57456,
+          "sha256": "5058416891bc47a2051557765997e8c42f8eb78a0e33c3e775bd17d4b0ba4d50",
+          "urls": []
+        },
+        {
+          "name": "candidate-manifest.json",
+          "bytes": 1782,
+          "sha256": "bab8916f22af20eeaa3a450540bffdf81842d5c88ae24976881d0d7f3a429493",
+          "urls": []
+        },
+        {
+          "name": "chat_template.json",
+          "bytes": 1161,
+          "sha256": "75a8cfca24f00de72d796fbfed6858fc9614ef3dabd8696684cc3bc03a9c58ff",
+          "urls": []
+        },
+        {
+          "name": "config.json",
+          "bytes": 6194,
+          "sha256": "2e74a751548b8ad7d7526d29365ad8144c345d8b412b1152d25dc6698452712f",
+          "urls": []
+        },
+        {
+          "name": "generation_config.json",
+          "bytes": 142,
+          "sha256": "1da527824d81e07118facff437e03f2e24a23311e3bdeb2368973fe77e5f275c",
+          "urls": []
+        },
+        {
+          "name": "merges.txt",
+          "bytes": 1671853,
+          "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+          "urls": []
+        },
+        {
+          "name": "model.safetensors",
+          "bytes": 2500516700,
+          "sha256": "ca8ab8ae3a99be685ad1a882b56cb019dbd4d44e76e0cd83072bd20b0df46f67",
+          "urls": []
+        },
+        {
+          "name": "preprocessor_config.json",
+          "bytes": 330,
+          "sha256": "45e120a4eda2c20c5d7f2ea9354e63536bf35e27aa573fb7cdf78017b378770d",
+          "urls": []
+        },
+        {
+          "name": "quantization_config.json",
+          "bytes": 71,
+          "sha256": "4936e5440df310f1c93be0d37abd4e7ddee65865765d1ed55b292fc16e20593b",
+          "urls": []
+        },
+        {
+          "name": "tokenizer_config.json",
+          "bytes": 12487,
+          "sha256": "4942d005604266809309cabc9f4e9cb89ce855d59b14681fdc0e1cc62ea26c4c",
+          "urls": []
+        },
+        {
+          "name": "vocab.json",
+          "bytes": 2776833,
+          "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910",
+          "urls": []
+        }
+      ],
+      "conversion": {
+        "bits": 8,
+        "groupSize": 64,
+        "runtimeVersion": "0.4.0",
+        "outputEstimateBytes": 2500516700,
+        "diskReserveBytes": 1073741824
+      },
+      "same_weight_backup": {
+        "url": "https://huggingface.co/Six666/mlx-qwen3-asr-1.7b-8bit/resolve/cecaf5b03ef565ea36cdee81216ad4f6a8e7cd0f/weights.safetensors",
+        "sha256": "ca8ab8ae3a99be685ad1a882b56cb019dbd4d44e76e0cd83072bd20b0df46f67",
+        "bytes": 2500516700,
+        "evidence": "same_public_file_not_historical_source",
+        "modelscope_mirror": "not_found_404"
+      }
+    }
+  ]
+}

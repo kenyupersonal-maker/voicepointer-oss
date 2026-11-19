@@ -1,0 +1,115 @@
+// 沙（2026-11-10 按主题重做，前身是「粒子」；当天第二版）。
+// 主题：一小团细沙，像撒在音箱上的沙子。由此反推：
+// - 材质只有沙粒：浅色下是黑沙，深色下是白沙，没有发光的底；
+// - 说话时动的是沙自己：声音把沙粒震起来、散开，停下来落回成一团；平时沙团慢慢转、表面有细小的流动；
+// - 往上推：整团沙聚成一个朝上的三角，还是一粒一粒的沙，里面没有线（0.5.91 那版把沙排成一根箭头，
+//   密得像画了一条线，Ken：非常难看）；只有尖上那一点带绿；
+// - 往下推：沙塌下去，摊成一小堆；
+// - 发送时三角从尖开始一批批飞上去；撤回时沙堆落下去、散掉。
+
+// (lean up 0…1, lean down 0…1) from the aim and the release.
+vec2 pt_lean(UARG u) {
+    float ms = hud_smoother(0.0, 1.0, snapSend(u));
+    float mc = hud_smoother(0.0, 1.0, snapCancel(u));
+    if (u.send > 0.0) { ms = 1.0; mc = 0.0; }
+    if (u.cancel > 0.0) { mc = 1.0; ms = 0.0; }
+    return vec2(ms, mc);
+}
+
+// Grain i → (x_pt, y_pt, size_pt, depth 0…1); .w is negative for a grain that is part of the arrow (|w| its depth).
+vec4 pt_state(int i, UARG u) {
+    float N = 1600.0;
+    float fi = float(i);
+    float h = hash11(fi * 1.37 + 0.5);
+    float h2 = hash11(fi * 2.71 + 7.0);
+    // rest: a ball of grains, slowly turning and tilted
+    float y = 1.0 - 2.0 * (fi + 0.5) / N;
+    float rr = sqrt(max(1.0 - y * y, 0.0));
+    float th = fi * 2.3999632;
+    vec3 P = vec3(rr * cos(th), y, rr * sin(th));
+    float ph = u.phase;
+    float a = ph * 0.30;
+    P = vec3(P.x * cos(a) + P.z * sin(a), P.y, -P.x * sin(a) + P.z * cos(a));
+    float tl = 0.38;
+    P = vec3(P.x, P.y * cos(tl) - P.z * sin(tl), P.y * sin(tl) + P.z * cos(tl));
+    float g = 0.2 + 0.8 * u.appear;
+    float L = u.level, pk = u.peak;
+    // the voice shakes the grains loose; they settle back when it stops
+    float R = 24.0;
+    float disp = L * (4.0 + 24.0 * h * h) + pk * 11.0 * h2;
+    vec3 W = P * (R + disp);
+    vec2 turb = vec2(gnoise(vec2(fi * 0.013, ph * 0.9)), gnoise(vec2(fi * 0.017 + 9.0, ph * 0.8)));
+    W.xy += turb * (1.6 + 8.0 * L);
+    W *= mix(1.8, 1.0, u.appear);
+    vec2 Wxy = W.xy * (1.0 + 0.12 * P.z);
+    float depth = 0.5 + 0.5 * P.z;
+
+    vec2 lean = pt_lean(u);
+    float ms = lean.x, mc = lean.y;
+    float h3 = hash11(fi * 4.19 + 3.0);
+    // up: every grain finds a place inside a triangle that points up; they leave the ball a few at a time
+    float bu = smoothstep(0.10 + 0.45 * h3, 0.45 + 0.50 * h3, ms);
+    float su = sqrt(h);
+    vec2 tri = vec2(0.0, 29.0) * (1.0 - su) + vec2(-25.0, -17.0) * su * (1.0 - h2) + vec2(25.0, -17.0) * su * h2;
+    tri += turb * (0.8 + 3.0 * L);
+    Wxy = mix(Wxy, tri, bu);
+    // down: the ball slumps into a low heap
+    float bd = smoothstep(0.10 + 0.45 * h3, 0.45 + 0.50 * h3, mc);
+    float hx = (h2 - 0.5) * 2.0;
+    hx = sign(hx) * pow(abs(hx), 0.75) * 30.0;
+    float heapTop = 13.0 * (1.0 - (hx / 30.0) * (hx / 30.0));
+    vec2 heap = vec2(hx, -19.0 + h * heapTop) + turb * (0.5 + 1.5 * L);
+    Wxy = mix(Wxy, heap, bd);
+    float settled = max(bu, bd);
+    depth = mix(depth, 0.55 + 0.4 * h3, settled);
+
+    // release
+    float S = u.send, C = u.cancel;
+    float fly = saturate((S - 0.40 * su) / 0.60);
+    Wxy.y += 200.0 * easeInCubic(fly);
+    float drop = easeInCubic(saturate((C - 0.25 * h3) / 0.75));
+    Wxy.y -= 60.0 * drop;
+    Wxy.x += (h2 - 0.5) * 30.0 * drop;
+    float size = (0.85 + 1.0 * depth) * (0.8 + 0.4 * h2) * g;
+    // .w carries how near the triangle's tip this grain sits (negative), for the tint
+    float tip = bu * (1.0 - smoothstep(0.0, 0.42, su));
+    return vec4(Wxy, size, tip > 0.02 ? -tip : depth);
+}
+
+vec4 part_particles(int i, UARG u) {
+    vec4 s = pt_state(i, u);
+    return vec4(s.xy, s.z, s.w < 0.0 ? 0.8 : s.w);
+}
+
+vec4 partColor_particles(int i, UARG u) {
+    vec4 ps = pt_state(i, u);
+    float fi = float(i);
+    float h = hash11(fi * 1.37 + 0.5);
+    float depth = ps.w < 0.0 ? 0.8 : ps.w;
+    float light = u.dark > 0.5 ? 0.0 : 1.0;
+    vec3 col = light > 0.5 ? vec3(0.07, 0.07, 0.08) : vec3(0.96, 0.96, 0.94);
+    // only the grains at the triangle's tip take the Send colour
+    if (ps.w < 0.0) {
+        vec3 green = light > 0.5 ? vec3(0.05, 0.60, 0.24) : vec3(0.45, 1.0, 0.60);
+        col = mix(col, green, saturate(-ps.w * 1.6));
+    }
+    float a = (0.35 + 0.65 * depth) * u.appear;
+    float fly = saturate((u.send - 0.40 * sqrt(h)) / 0.60);
+    a *= 1.0 - smoothstep(0.55, 1.0, fly);
+    a *= 1.0 - smoothstep(0.55, 1.0, u.cancel);
+    a *= 1.0 - u.fade;
+    return light > 0.5 ? vec4(col * a * 0.92, a * 0.92) : vec4(col * a * 0.90, a * 0.75);
+}
+
+// Under the grains: only a soft patch of the page's own tone, so the sand reads over busy content. No glow.
+vec4 skin_particlesglow(vec2 p, UARG u) {
+    float light = u.dark > 0.5 ? 0.0 : 1.0;
+    vec2 lean = pt_lean(u);
+    float live = (1.0 - saturate(u.send * 2.0)) * (1.0 - saturate(u.cancel * 1.5)) * (1.0 - u.fade) * u.appear;
+    vec2 q = p - vec2(0.0, 3.0 * lean.x - 12.0 * lean.y);
+    q.x /= 1.0 + 0.25 * lean.y;
+    q.y *= 1.0 + 0.6 * lean.y;
+    float r = length(q);
+    float bd = (1.0 - smoothstep(18.0, 40.0 + 12.0 * u.level, r)) * live;
+    return light > 0.5 ? vec4(vec3(1.0) * bd * 0.55, bd * 0.55) : vec4(vec3(0.07, 0.07, 0.08) * bd * 0.55, bd * 0.55);
+}

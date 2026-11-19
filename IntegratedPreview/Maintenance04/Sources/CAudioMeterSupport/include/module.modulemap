@@ -1,0 +1,4 @@
+module CAudioMeterSupport {
+  header "CAudioMeterSupport.h"
+  export *
+}

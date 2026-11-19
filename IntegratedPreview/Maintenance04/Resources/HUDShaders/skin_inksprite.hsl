@@ -1,0 +1,95 @@
+// 墨（2026-11-10 第三次重做）。主题：它本身就是一滴落下来的墨，没有纸，也没有砚台。
+// 0.5.91 那版 Ken 的意见：跟着声音一跳一跳的不自然；中间那个点和外面的晕染对不上，界限太硬。
+// 按墨在宣纸上真实洇开的样子改（水带着炭粒顺着纤维走，炭粒自己几乎不扩散；毛细渗透的距离大致随时间的平方根增长，
+// 先快后慢；好宣纸上边沿平滑、只有细小的起伏）：
+// - 只有一个连续的浓淡：中间最浓，往外一路变淡，到墨停下的地方有一道柔和的边，再外面是更淡的一圈水痕。
+//   浓墨、淡墨、水痕用同一个形状，所以里外是对得上的；
+// - 墨不跟着音节跳。它一滴接一滴地洇开：每一滴先快后慢地往外走、越走越淡，下一滴接上来。
+//   说话时洇得快、接得密，安静时很慢，所以节奏是墨自己的节奏，声音只决定快慢；
+// - 往上推：墨被一笔往上提，越到笔尖越细、越干，拖出飞白；松手这一笔甩上去。
+//   0.5.105（Ken）：这一笔和飞白原样不动，只是底下的晕染不再只围着起笔那一点，而是跟着笔往上走——笔按在纸上
+//   往外洇，笔尖往上滑，湿的那段一样在洇。晕染只跟到笔画中段，越往上越窄，上面干的那段露出原来的飞白；
+// - 往下推：像滴进水里，墨整片化开、变淡、往下沉；松手整团散掉；
+// - 深色模式下是白墨。墨后面垫一圈很淡的反色晕，压在什么内容上都看得清。
+
+// How far the edge reaches in direction `dir` (a unit vector), about 1 ± amount: a few slow lobes and a fine tremble.
+float ik_reach(vec2 dir, float amount, float seed) {
+    float lobes = gnoise(dir * 1.7 + vec2(seed, seed * 0.61));
+    float fine = gnoise(dir * 6.5 + vec2(-seed * 1.3, seed));
+    return 1.0 + amount * (1.6 * lobes + 0.35 * fine);
+}
+
+// One spreading of ink: density at radius r (already divided by the direction's reach), `age` 0…1 through its life.
+float ik_spread(float r, float age, float Rc, float Rmax) {
+    float front = Rc + (Rmax - Rc) * sqrt(age);                // fast at first, then slower
+    float x = r / front;
+    float thin = 1.0 / (1.0 + 2.2 * age);                       // the same ink over a larger patch
+    float body = mix(0.60, 0.26, saturate((r - Rc * 0.8) / max(front - Rc * 0.8, 1.0))) * smoothstep(1.03, 0.93, x);
+    float tide = 0.07 * exp(-pow((x - 0.955) / 0.035, 2.0));     // where the ink stopped
+    float water = 0.055 * smoothstep(1.30, 1.02, x);            // the water runs a little further than the ink
+    float life = smoothstep(0.0, 0.06, age) * (1.0 - smoothstep(0.62, 1.0, age));
+    return ((body + tide) * thin + water) * life;
+}
+
+vec4 skin_inksprite(vec2 p, UARG u) {
+    float dark = u.dark;
+    float S = u.send, C = u.cancel;
+    float ms = hud_smoother(0.0, 1.0, snapSend(u));
+    float mc = hud_smoother(0.0, 1.0, snapCancel(u));
+    if (S > 0.0) { ms = 1.0; mc = 0.0; }
+    if (C > 0.0) { mc = 1.0; ms = 0.0; }
+    float g = max(0.2 + 0.8 * u.appear, 0.001);
+    float fly = easeInCubic(saturate(S / 0.9));
+    float melt = easeInOut(saturate(C / 0.9));
+    float seed = u.seed * 9.0;
+    vec2 q = (p - vec2(0.0, 150.0 * fly - 5.0 * mc - 10.0 * melt)) / g;
+    float r = length(q);
+    if (r > 95.0) return vec4(0.0);
+    vec2 dir = q / max(r, 0.001);
+
+    // the fresh drop in the middle: densest, its edge soft, hardly moving
+    float Rc = 12.5 * (1.0 - 0.36 * ms) * (1.0 - 0.45 * fly);
+    float rCore = r / ik_reach(dir, 0.045, seed);
+    float aCore = smoothstep(Rc + 2.6, Rc - 3.4, rCore) * (1.0 - 0.60 * mc);
+
+    // the spreadings: two generations half a cycle apart, each with its own slightly different outline
+    float Rmax = 33.0 + 12.0 * mc + 18.0 * melt;
+    float aSpread = 0.0;
+    // where the spreading is measured from: the wet part of the stroke, from the drop up to about its middle
+    vec2 wetTip = vec2(0.0, 20.0 * ms);
+    float wt = saturate(dot(q, wetTip) / max(dot(wetTip, wetTip), 1e-4));
+    vec2 wq = q - wetTip * wt;
+    float wr = length(wq) / mix(1.0, 0.62, wt * ms);
+    vec2 wdir = wq / max(length(wq), 0.001);
+    for (int i = 0; i < 2; i++) {
+        float cyc = u.phase / 2.3 + float(i) * 0.5;
+        float age = fract(cyc);
+        float id = floor(cyc) * 2.0 + float(i);
+        float rs = wr / ik_reach(wdir, 0.085 + 0.05 * mc, seed + id * 1.37);
+        aSpread = 1.0 - (1.0 - aSpread) * (1.0 - ik_spread(rs, age, Rc, Rmax));
+    }
+    aSpread *= 1.0 - 0.35 * mc;
+
+    // the stroke lifted out of the drop: thinner and drier toward the tip
+    float y1 = 12.0 + 30.0 * ms;
+    float sAlong = saturate((q.y + 4.0) / (y1 + 4.0));
+    float xc = 2.6 * sin(sAlong * 2.3) * ms;
+    float wide = mix(9.5, 2.6, pow(sAlong, 0.9)) * (0.5 + 0.5 * ms) * (1.0 + 0.16 * gnoise(vec2(q.y * 0.30, seed + 3.0)));
+    float dStroke = length(vec2(q.x - xc, q.y - clamp(q.y, -4.0, y1))) - wide;
+    float bristle = gnoise(vec2((q.x - xc) * 1.7 + seed, q.y * 0.060));
+    float dry = smoothstep(0.22, 0.95, sAlong) * smoothstep(-0.28, 0.12, bristle);
+    float aStroke = smoothstep(1.0, -1.0, dStroke) * (1.0 - 0.88 * dry) * smoothstep(0.02, 0.25, ms) * 0.94;
+
+    float dens = 1.0 - (1.0 - aCore * 0.95) * (1.0 - aSpread) * (1.0 - aStroke);
+    dens = saturate(dens * (0.96 + 0.08 * vnoise(q * 1.1 + seed)));
+    float gone = (1.0 - melt) * (1.0 - smoothstep(0.55, 1.0, fly)) * u.appear;
+    dens *= gone;
+
+    vec3 ink = dark > 0.5 ? vec3(0.94, 0.92, 0.87) : vec3(0.055, 0.055, 0.065);
+    // a faint halo of the opposite tone keeps the ink readable over anything
+    float dOut = max(min(wr - Rmax * 0.80, dStroke), 0.0);
+    float halo = exp(-dOut / 7.0) * (dark > 0.5 ? 0.40 : 0.46) * gone * (1.0 - dens);
+    vec3 haloC = dark > 0.5 ? vec3(0.0) : vec3(1.0);
+    vec4 back = vec4(haloC * halo, halo);
+    return over(vec4(ink * dens, dens), back) * (1.0 - u.fade);
+}

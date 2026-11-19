@@ -1,0 +1,102 @@
+// 液滴融合（2026-11-10 重做；原来几团彩色球在外面乱飘，Ken：一般）。一颗透明的玻璃珠里装着几滴彩色的糖浆：
+// - 五滴液体在珠子里互相绕着转，靠近就融在一起（平滑并集），表面按液面高度算法线，有糖果一样的光泽和高光；
+// - 说话时液滴跟着音节鼓起来、转得更快；
+// - 小球的符号语言：往上推，液滴向中间汇拢、缩小，同时一股液体沿路径长出 ↑（绿）；往下推长出 ↶（红）；
+//   外面那圈玻璃珠一直是圆的；
+// - 发送时整颗往上飞走，撤回时液滴合成一团缩没。
+
+vec3 mb_color(int i) {
+    if (i == 0) return vec3(1.00, 0.76, 0.22);
+    if (i == 1) return vec3(1.00, 0.45, 0.30);
+    if (i == 2) return vec3(0.98, 0.36, 0.62);
+    if (i == 3) return vec3(0.62, 0.42, 1.00);
+    return vec3(0.30, 0.70, 1.00);
+}
+
+// The liquid's distance (points) and its colour at q (bead centre at the origin).
+vec4 mb_liquid(vec2 q, vec4 st, UARG u) {
+    float gather = st.x;
+    float d = 1e5;
+    vec3 col = vec3(0.0);
+    float wsum = 0.0;
+    float spin = u.phase * (0.9 + 0.6 * u.level);
+    for (int i = 0; i < 5; i++) {
+        float fi = float(i);
+        float a = spin * (0.55 + 0.11 * fi) + fi * 1.2566;
+        float orbit = mix(13.0 + 4.0 * sin(u.time * 0.7 + fi * 2.0), 3.0, gather);
+        vec2 c = vec2(cos(a), sin(a)) * orbit;
+        // the drops shrink away as the mark grows, so the mark reads cleanly
+        float r = mix(9.0 + 1.5 * sin(u.time * 1.3 + fi), 4.0, gather) * (1.0 + 0.25 * u.level + 0.15 * u.peak)
+                * (1.0 - 0.95 * st.w);
+        float di = length(q - c) - r;
+        float w = exp(-max(di, 0.0) * 0.6);
+        col += mb_color(i) * w;
+        wsum += w;
+        d = smin(d, di, mix(7.0, 2.0, st.w));
+    }
+    col /= max(wsum, 1e-3);
+    // the mark grows out of the liquid as a thicker stroke
+    if (st.w > 0.0) {
+        float ds = (st.y > 0.0 ? sym_up(q, st.w) : sym_undo(q, st.w)) - 0.9;
+        vec3 aimC = st.y > 0.0 ? vec3(0.22, 0.88, 0.40) : vec3(1.0, 0.33, 0.33);
+        float k = saturate(0.5 - (ds - d) * 0.15);
+        col = mix(col, aimC, max(k, st.x * 0.85));
+        d = smin(d, ds, mix(5.0, 1.5, st.w));
+    }
+    return vec4(col, d);
+}
+
+vec4 skin_metaballs(vec2 p, UARG u) {
+    vec4 st = sym_state(u);
+    float dark = u.dark;
+    float fly = easeInCubic(saturate(u.send / 0.85));
+    float shrink = easeInCubic(saturate(u.cancel / 0.85));
+    float g = max((0.2 + 0.8 * u.appear) * (1.0 - shrink), 0.001);
+    vec2 c0 = vec2(0.0, 150.0 * fly);
+    vec2 q = (p - c0) / g;
+    float R = 38.0;
+    float dBead = (length(q) - R) * g;
+    vec3 aimC = st.y > 0.0 ? vec3(0.20, 0.90, 0.42) : vec3(1.0, 0.36, 0.36);
+
+    // page: soft shadow and the coloured light toward the aimed side
+    vec2 sq = (q - vec2(3.0, -8.0)) / vec2(36.0, 30.0);
+    vec4 back = vec4(vec3(0.0), exp(-dot(sq, sq) * 1.7) * (dark > 0.5 ? 0.32 : 0.16) * (1.0 - fly));
+    float side = saturate(0.35 + 0.65 * dot(normalize(q + vec2(0.0, 1e-3)), vec2(0.0, st.y)));
+    float glow = exp(-max(dBead, 0.0) / 10.0) * st.x * side * (1.0 - fly) * (1.0 - shrink);
+    back = over(vec4(aimC * glow * (dark > 0.5 ? 0.5 : 0.28), glow * (dark > 0.5 ? 0.08 : 0.18)), back);
+    back *= saturate(dBead / 1.5 + 0.5);
+    if (dBead > 2.0) return back * (1.0 - u.fade);
+
+    // the bead: a clear glass shell, darker and reflective at its rim
+    vec2 nq = q / R;
+    float ct = sqrt(max(1.0 - min(dot(nq, nq), 1.0), 0.0));
+    float F = 0.04 + 0.96 * pow(1.0 - ct, 5.0);
+    vec3 shell = dark > 0.5 ? vec3(0.55, 0.60, 0.70) : vec3(0.66, 0.71, 0.80);
+    vec4 glass = vec4(shell * (0.08 + 0.70 * F), 0.08 + 0.70 * F);
+    vec2 hl = nq - vec2(-0.38, 0.50);
+    float spec = exp(-dot(hl, hl) / 0.018);
+    glass = over(vec4(vec3(1.0) * spec * 0.8, spec * 0.8), glass);
+
+    // the liquid inside, shaded as a dome
+    vec4 lq = mb_liquid(q, st, u);
+    float dl = lq.w;
+    vec4 liquid = vec4(0.0);
+    if (dl < 2.0) {
+        float h = 0.8;
+        float zx = sqrt(max(-mb_liquid(q + vec2(h, 0.0), st, u).w, 0.0)) - sqrt(max(-mb_liquid(q - vec2(h, 0.0), st, u).w, 0.0));
+        float zy = sqrt(max(-mb_liquid(q + vec2(0.0, h), st, u).w, 0.0)) - sqrt(max(-mb_liquid(q - vec2(0.0, h), st, u).w, 0.0));
+        vec3 n = normalize(vec3(-zx * 1.6, -zy * 1.6, 2.0 * h));
+        vec3 key = normalize(vec3(-0.45, 0.60, 0.66));
+        float diff = 0.55 + 0.45 * max(dot(n, key), 0.0);
+        float sp = pow(max(dot(n, normalize(key + vec3(0.0, 0.0, 1.0))), 0.0), 70.0);
+        vec3 col = lq.rgb * diff * (dark > 0.5 ? 0.95 : 1.0);
+        col += vec3(1.0) * sp * 0.9;
+        col = mix(col, lq.rgb * 0.55, 0.35 * pow(1.0 - n.z, 2.0));
+        float a = cover(dl, u);
+        liquid = vec4(saturate(col) * a, a);
+    }
+    vec4 body = over(glass, liquid);
+    float a = cover(dBead, u) * (1.0 - smoothstep(0.55, 0.95, u.send)) * (1.0 - smoothstep(0.7, 1.0, u.cancel));
+    body *= a;
+    return over(body, back) * (1.0 - u.fade);
+}

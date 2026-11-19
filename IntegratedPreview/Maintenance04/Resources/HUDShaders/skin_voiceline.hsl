@@ -1,0 +1,149 @@
+// 声纹（2026-11-10 第四版）。Ken 对第三版的意见：不是整圈往外散、一波一波地放点。要的是：
+// - 它本来就是一圈点；说话时，点的间距跟着变，每个点各自往外长出一截，长短不一（一圈点变成一圈长短不一的短线）；
+// - 变成箭头时，点像排队一样走过去：最下面那个点先往上走，后面的点一个跟一个，走到头以后再往里散开站好，
+//   排成 ↑；撤回也一样，从圈顶上那个点开始，排成 ↩。
+// 第五版（0.5.96，Ken）：长出来的短线不变粗；每个点各跳各的，不再有整圈一起炸开的规律感；有底噪时不再一直是
+// 虚线（声音要过一个小门槛才开始长）；过线的动画缩短；从 ↑ 直接推到 ↩ 时不先变回圆，从当时的形状直接变过去。
+// 做法：40 个点。安静时是一圈点，半径随声音变大（间距跟着变），每个点沿半径往外长出一截，长度按这个点自己的
+// 节奏和声音大小来。过线以后（自己播完，约 0.8 秒）：每个点沿同一条「队列路线」走——先顺着圆走到入口，再顺着
+// 符号的主笔画往前走，整队压在主笔画上；然后前面的点散开去站箭头的两翼，后面的点在主笔画上均匀站开。
+
+#define VL_N 40
+
+// The symbol's main stroke (from where the dots come in to where the head is), at arc length s, in points (×1.3).
+vec2 vl_main(float s, float side) {
+    if (side > 0.0) return vec2(0.0, -16.9 + min(s, 33.8));                        // ↑: tail up to the tip
+    // ↩ drawn from the top down: the top tail to the right, round the turn, back along the bottom to the head
+    float L0 = 13.0, L1 = 3.14159 * 11.05, L2 = 16.9;
+    if (s < L0) return vec2(-7.8 + s, 11.7);
+    s -= L0;
+    if (s < L1) { float a = 1.5708 - s / 11.05; return vec2(5.2, 0.65) + 11.05 * vec2(cos(a), sin(a)); }
+    s -= L1;
+    return vec2(5.2 - min(s, L2), -10.4);
+}
+float vl_mainLen(float side) { return side > 0.0 ? 33.8 : 13.0 + 3.14159 * 11.05 + 16.9; }
+// the two wings, from the head point outward: (head, end of the left/first wing, end of the other)
+vec2 vl_head(float side) { return side > 0.0 ? vec2(0.0, 16.9) : vec2(-11.7, -10.4); }
+vec2 vl_wing(float side, float which) {
+    if (side > 0.0) return which < 0.5 ? vec2(-13.0, 3.9) : vec2(13.0, 3.9);
+    return which < 0.5 ? vec2(-5.2, -16.9) : vec2(-5.2, -3.9);
+}
+
+// Where dot k of the queue (0 = the one at the entry) stands, given the ring radius R, the entry angle aE and the walk p.
+vec2 vl_dot(float k, float R, float aE, float p, float side) {
+    float N = float(VL_N);
+    vec2 S0 = vl_main(0.0, side);
+    vec2 E = R * vec2(cos(aE), sin(aE));
+    float conn = length(S0 - E);
+    float Lm = vl_mainLen(side);
+    float gapR = TAU * R / N;
+    // the march: along the ring to the entry, along the connector, then up the stroke, all compressed on the stroke
+    float x0 = -k * gapR;
+    float x1 = conn + Lm * (1.0 - k / (N - 1.0));
+    float start = 0.42 * k / N;
+    float walk = hud_smoother(0.0, 1.0, saturate((p / 0.72 - start) / 0.58));
+    float x = mix(x0, x1, walk);
+    vec2 pos;
+    if (x < 0.0) { float a = aE + x / R; pos = R * vec2(cos(a), sin(a)); }
+    else if (x < conn) pos = mix(E, S0, x / conn);
+    else pos = vl_main(x - conn, side);
+    // then the front of the queue fans out into the wings and the rest stand evenly along the stroke
+    float spread = hud_smoother(0.0, 1.0, saturate((p - 0.62) / 0.38));
+    float nWing = side > 0.0 ? 8.0 : 3.0;
+    vec2 target;
+    if (k >= 1.0 && k <= 2.0 * nWing) {
+        float which = mod(k - 1.0, 2.0);
+        float w = floor((k - 1.0) / 2.0) + 1.0;
+        target = mix(vl_head(side), vl_wing(side, which), w / nWing);
+    } else {
+        float m = k < 0.5 ? 0.0 : k - 2.0 * nWing;
+        float nMain = N - 2.0 * nWing;
+        target = vl_main(Lm * (1.0 - m / (nMain - 1.0)), side);
+    }
+    return mix(pos, target, spread);
+}
+
+// How far dot j's dash reaches right now, 0…1: its own pace and its own moments, nothing shared round the ring.
+float vl_beat(float j, float t) {
+    float h1 = hash11(j * 3.17 + 1.3), h2 = hash11(j * 7.31 + 4.1);
+    float slow = vnoise(vec2(j * 5.71 + 2.0, t * (1.6 + 1.9 * h1)));
+    float quick = vnoise(vec2(j * 9.13 + 40.0, t * (5.0 + 4.0 * h2)));
+    float v = 0.55 * slow + 0.45 * quick;
+    return saturate((v - 0.22) / 0.60);
+}
+
+vec4 skin_voiceline(vec2 p, UARG u) {
+    float dark = u.dark;
+    float S = u.send, C = u.cancel;
+    float ws = snapSend(u), wc = snapCancel(u);
+    if (S > 0.0) { ws = 1.0; wc = 0.0; }
+    if (C > 0.0) { wc = 1.0; ws = 0.0; }
+    float fly = easeInCubic(saturate(S / 0.85));
+    float turn = easeInOut(saturate(C / 0.9));
+    float k = max((0.2 + 0.8 * u.appear) * (1.0 - 0.85 * turn), 0.001);
+    vec2 q = rot2(-2.4 * turn) * (p - vec2(0.0, 150.0 * fly)) / k;
+    float r = length(q);
+    if (r > 52.0) return vec4(0.0);
+    float gone = (1.0 - smoothstep(0.55, 1.0, fly)) * (1.0 - smoothstep(0.6, 1.0, turn)) * u.appear;
+    float t = u.time;
+    float N = float(VL_N);
+
+    vec3 green = dark > 0.5 ? vec3(0.27, 0.93, 0.40) : vec3(0.05, 0.70, 0.12);
+    vec3 red = dark > 0.5 ? vec3(1.00, 0.42, 0.40) : vec3(0.88, 0.20, 0.18);
+    vec3 col = mix(green, red, smoothstep(0.25, 0.75, wc));
+
+    // the voice above the room's own noise: below the gate the ring stays plain dots
+    float voice = saturate((u.level + 0.5 * u.peak - 0.14) / 0.80);
+    float R = 16.0 + 6.5 * voice;
+    // 0.5.97 (Ken, again: the dashes still look fatter than the dots). They had the same 2.1 pt width, but a 2.1 pt
+    // line reads much heavier than a 2.1 pt dot. The dot keeps its size; the dash that grows out of it is a 1.3 pt line.
+    float w = 1.05;
+    float wLine = 0.65;
+    float walking = max(ws, wc);
+    float reachMax = 15.0 * voice * (1.0 - smoothstep(0.0, 0.25, walking));
+    // 0.5.102 (Ken: once there is voice the dashes look fatter than the dots). Dots and dashes are kept apart so only
+    // the dots glow: the glow round a dash ran its whole length and made the 1.3 pt line read wider than the dot.
+    float dDot = 1e5, dLine = 1e5;
+    if (walking < 0.001) {
+        // at rest: the nearest dot only, and its dash outward
+        float phi = atan2(q.y, q.x);
+        float j = mod(floor(phi / TAU * N + 0.5) + N, N);
+        float a = j / N * TAU;
+        float len = reachMax * vl_beat(j, t);
+        vec2 dir = vec2(cos(a), sin(a));
+        float along = dot(q, dir), lat = dot(q, vec2(-dir.y, dir.x));
+        dDot = length(vec2(lat, along - R)) - w;
+        dLine = length(vec2(lat, along - clamp(along, R, R + len))) - wLine;
+    } else {
+        // on the way to a symbol, or from one straight to the other: each dot is pulled from its place on the ring
+        // toward its place in ↑ by ws and toward its place in ↩ by wc, at once
+        vec2 Su = vl_main(0.0, 1.0), Sc = vl_main(0.0, -1.0);
+        float jU = floor(atan2(Su.y, Su.x) / TAU * N + 0.5), jC = floor(atan2(Sc.y, Sc.x) / TAU * N + 0.5);
+        float aU = jU / N * TAU, aC = jC / N * TAU;
+        for (int i = 0; i < VL_N; i++) {
+            float j = float(i);
+            float a = j / N * TAU;
+            // 0.5.101. One side alone is exactly the 0.5.95 walk (Ken: only the change of side was to change). While
+            // both are in play, each keeps its own walk on its own amount and the dot stands between the two places,
+            // by how much of the total is Cancel: no stall, and nothing outside the two.
+            float share = hud_smoother(0.0, 1.0, wc / max(ws + wc, 1e-4));
+            vec2 c = vec2(0.0);
+            if (share < 0.999) c += (1.0 - share) * vl_dot(mod(jU - j + N, N), R, aU, ws, 1.0);
+            if (share > 0.001) c += share * vl_dot(mod(jC - j + N, N), R, aC, wc, -1.0);
+            float len = reachMax * vl_beat(j, t);
+            vec2 dir = vec2(cos(a), sin(a));
+            float along = dot(q - c, dir), lat = dot(q - c, vec2(-dir.y, dir.x));
+            dDot = min(dDot, length(q - c) - w);
+            dLine = min(dLine, length(vec2(lat, along - clamp(along, 0.0, len))) - wLine);
+        }
+    }
+    float d = min(dDot, dLine) * k;
+    dDot *= k;
+    float a = cover(d, u);
+    float glow = dark > 0.5 ? exp(-max(dDot, 0.0) / 2.4) * 0.28 : 0.0;
+    vec4 fig = vec4(col * saturate(a + glow), saturate(a + glow * 0.35));
+    // a faint halo of the page's own tone so the figure reads over anything
+    float halo = exp(-max(r - R - 6.0, 0.0) / 6.0) * smoothstep(0.0, R * 0.6, r) * (dark > 0.5 ? 0.30 : 0.42);
+    vec4 back = vec4((dark > 0.5 ? vec3(0.0) : vec3(1.0)) * halo, halo);
+    return over(fig, back) * gone * (1.0 - u.fade);
+}

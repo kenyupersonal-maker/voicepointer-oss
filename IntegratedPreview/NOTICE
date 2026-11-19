@@ -1,0 +1,13 @@
+VoicePointer
+
+This project is an independent implementation. It does not copy source code
+from artginzburg/MiddleClick (GPL-3.0). The gesture design was informed by
+public documentation and the project's publicly described behavior.
+
+The device/lifecycle notes also considered
+SomeGuyNamedDaveIsTaken/macOSMiddleClick (MIT), but no source file from that
+project is bundled here. If code is imported in the future, preserve the
+corresponding copyright and license notices.
+
+VoicePointer dynamically loads Apple's private MultitouchSupport framework at
+runtime. Apple trademarks and frameworks remain Apple's property.

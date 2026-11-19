@@ -1,0 +1,136 @@
+{
+  "schema_version": 1,
+  "models": [
+    {
+      "id": "qwen06-rolling",
+      "version": "5eb1441",
+      "prefix": "asr-lab/models/Qwen3-ASR-0.6B-5eb1441",
+      "files": [
+        {
+          "name": "chat_template.json",
+          "bytes": 1161,
+          "sha256": "75a8cfca24f00de72d796fbfed6858fc9614ef3dabd8696684cc3bc03a9c58ff"
+        },
+        {
+          "name": "config.json",
+          "bytes": 6193,
+          "sha256": "76d3ae4601ce939830b2517f4a6cadb86cc51316c3900af6b020b051c21a478c"
+        },
+        {
+          "name": "merges.txt",
+          "bytes": 1671853,
+          "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+        },
+        {
+          "name": "model.safetensors",
+          "bytes": 1876091704,
+          "sha256": "79d6cbd4c98c7bbffe9db2edac07f56cd6637d0d5944b27f6c2b8353840323ea"
+        },
+        {
+          "name": "preprocessor_config.json",
+          "bytes": 330,
+          "sha256": "45e120a4eda2c20c5d7f2ea9354e63536bf35e27aa573fb7cdf78017b378770d"
+        },
+        {
+          "name": "tokenizer_config.json",
+          "bytes": 12487,
+          "sha256": "4942d005604266809309cabc9f4e9cb89ce855d59b14681fdc0e1cc62ea26c4c"
+        },
+        {
+          "name": "vocab.json",
+          "bytes": 2776833,
+          "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+        }
+      ]
+    },
+    {
+      "id": "qwen17-rolling",
+      "version": "7278e1e/8bit/group64",
+      "prefix": "asr-lab/models/Qwen3-ASR-1.7B-8bit-7278e1e",
+      "files": [
+        {
+          "name": "LICENSE",
+          "bytes": 11358,
+          "sha256": "cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30"
+        },
+        {
+          "name": "NOTICE",
+          "bytes": 261,
+          "sha256": "8c1993b0bce6353021ddc314a50b6809bc63a8f2a2b31c87d6e6d0a249aa36e0"
+        },
+        {
+          "name": "README.md",
+          "bytes": 57456,
+          "sha256": "5058416891bc47a2051557765997e8c42f8eb78a0e33c3e775bd17d4b0ba4d50"
+        },
+        {
+          "name": "candidate-manifest.json",
+          "bytes": 1782,
+          "sha256": "bab8916f22af20eeaa3a450540bffdf81842d5c88ae24976881d0d7f3a429493"
+        },
+        {
+          "name": "chat_template.json",
+          "bytes": 1161,
+          "sha256": "75a8cfca24f00de72d796fbfed6858fc9614ef3dabd8696684cc3bc03a9c58ff"
+        },
+        {
+          "name": "config.json",
+          "bytes": 6194,
+          "sha256": "2e74a751548b8ad7d7526d29365ad8144c345d8b412b1152d25dc6698452712f"
+        },
+        {
+          "name": "generation_config.json",
+          "bytes": 142,
+          "sha256": "1da527824d81e07118facff437e03f2e24a23311e3bdeb2368973fe77e5f275c"
+        },
+        {
+          "name": "merges.txt",
+          "bytes": 1671853,
+          "sha256": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5"
+        },
+        {
+          "name": "model.safetensors",
+          "bytes": 2500516700,
+          "sha256": "ca8ab8ae3a99be685ad1a882b56cb019dbd4d44e76e0cd83072bd20b0df46f67"
+        },
+        {
+          "name": "preprocessor_config.json",
+          "bytes": 330,
+          "sha256": "45e120a4eda2c20c5d7f2ea9354e63536bf35e27aa573fb7cdf78017b378770d"
+        },
+        {
+          "name": "quantization_config.json",
+          "bytes": 71,
+          "sha256": "4936e5440df310f1c93be0d37abd4e7ddee65865765d1ed55b292fc16e20593b"
+        },
+        {
+          "name": "tokenizer_config.json",
+          "bytes": 12487,
+          "sha256": "4942d005604266809309cabc9f4e9cb89ce855d59b14681fdc0e1cc62ea26c4c"
+        },
+        {
+          "name": "vocab.json",
+          "bytes": 2776833,
+          "sha256": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+        }
+      ]
+    },
+    {
+      "id": "punctuation",
+      "version": "qwen-local-03",
+      "prefix": "asr-lab/models/punctuation",
+      "files": [
+        {
+          "name": "model.int8.onnx",
+          "bytes": 75519198,
+          "sha256": "65a3fb9f5ad7bfb96bf69e0dc4481df97f6ee60513c1d94ce981ba6effd524b1"
+        },
+        {
+          "name": "tokens.json",
+          "bytes": 4207480,
+          "sha256": "c960ab87bccea4aa15cf49a59f71973c2c330b46668048cd8da253749ec71ee3"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,571 @@
+// ---- Astra (product). Parameters are PARAM_F / PARAM_V3: Metal function constants in the app (index = constant id,
+//      see skin_params.json), uniforms of the same name in the WebGL tuning page. Helpers are prefixed as_ so this file
+//      can share one Metal library with skin_blackhole.hsl. ----
+// ---- Astra 星空背景 v2（调参页专用：背景参数做成 uniform，产品里把选定的数值写死，见 bake_astra.py） ----
+// 星空底
+PARAM_F(skyRadius, 0)   // 星空半径 pt（45–90）
+PARAM_F(skyEdge, 1)     // 边缘颗粒渐隐带的半宽 pt（4–40）
+PARAM_F(skyOpacity, 2)  // 中心不透明度（0.6–1）
+PARAM_V3(skyColor, 3)    // 深空底色（近黑，带一点蓝）
+PARAM_F(diskClear, 4)   // 吸积盘下面和周围清成纯黑 0–1
+// 边缘颗粒
+PARAM_F(edgeGrain, 5)   // 0 = 光滑的边，1 = 满颗粒
+PARAM_F(grainSize, 6)   // 颗粒格子大小 pt（0.4–3）
+PARAM_F(grainDrift, 7)  // 颗粒向外缓缓飘 0–1
+PARAM_F(skyClump, 8)    // 密度的大尺度起伏 0–1（低 = 圆）
+// 星星
+PARAM_F(starDensity, 9) // 星星密度 0–1
+PARAM_F(starBright, 10)  // 星星亮度 0–2
+PARAM_F(starBlue, 11)    // 蓝星比例 0–1
+PARAM_F(starWarm, 12)    // 暖星比例 0–1（其余是白星；蓝 + 暖 > 1 时按比例缩）
+PARAM_F(starTwinkle, 13) // 闪烁 0–1
+PARAM_F(starDrift, 14)   // 星空缓缓转动 0–1
+PARAM_F(starOut, 15)     // 边缘外的星星量 0–1（越过暗场继续往外，越来越稀）
+PARAM_F(lensStars, 16)   // 引力透镜对星星的作用 0–1
+// 银河
+PARAM_F(milky, 17)       // 银河带亮度 0–1
+PARAM_F(milkyAngle, 18)  // 银河角度（度，-90–90）
+PARAM_F(milkyWidth, 19)  // 银河宽度 pt（8–60）
+PARAM_F(milkyDust, 20)   // 暗尘带 0–1
+PARAM_F(milkyWarm, 21)   // 银河暖核 0–1
+// 吸积盘
+PARAM_F(diskBright, 22)  // 盘 + 光子环 + 辉光的总亮度 0.6–2
+PARAM_F(diskSat, 23)     // 盘的饱和度 0–2（1 = 不变）
+PARAM_F(diskHeat, 24)    // 0 = 原来的金色渐变，1 = 黑体式 白热 → 淡黄 → 橙 → 深红
+
+// 黑洞：《星际穿越》Gargantua 式的黑洞（全部在平面上解析地算，不做光线追踪）。
+// - 阴影：黑色圆（半径 Rs），边上一圈极细的光子环；背后的星星被引力拉成小弧。
+// - 吸积盘：薄盘几乎侧对着我们（sin 倾角 = SI）。近半边直接投影，从阴影前面横穿过去；
+//   远半边在黑洞后面，光被弯折：点质量透镜 β = θ(1 − θE²/|θ|²)，θE² = K·(光源在黑洞后面的深度)，
+//   于是远半边拱到阴影上方成一道粗弧，阴影下方还有一道细弧（次像，左右是反的）。这个映射有解析解。
+// - 盘面：内圈白热 → 金 → 橙 → 外圈红；朝我们转过来的左侧更亮更白（多普勒增亮）；
+//   沿轨道拉长的细条纹 + 同心细环，内圈转得快、外圈慢（两层交替，不会越卷越密）；
+//   纹理按屏幕像素大小自动去掉过细的频率，不闪。
+// - 说话：转得更快、更亮，有往里收的亮波；引力一呼一吸，光弧跟着胀缩，光子环随音节闪。
+// - 指向 Send：上方光弧的中间被甩出一道光舌伸向 Send，用盘面自己的颜色（不再有绿色光柱）。
+//   发送：整条光带被甩上去，黑洞收成一点。
+// - 指向 Cancel：黑色阴影本身往下被挤出一滴，伸向 Cancel，光子环和下方细弧绕着它走。
+//   撤回：黑色张开把光吞掉，再收成一点，最后闪一下。
+// - 背景 Astra v2（2026-09-29）：黑洞坐在一片深空里。中间是纯黑（带一点蓝），边缘不是羽化也不是云，
+//   而是极细的颗粒：往里越来越密、连成实心的黑，往外越来越稀，慢慢向外飘散（两层交叉淡入，和盘面同一个办法）。
+//   密度只用一个半径函数加两层大尺度噪声（skyClump 控制不规则程度），颗粒是抖动网格里的小圆点，
+//   点的半径随密度变大，所以里面自然糊成实心；抗锯齿用像素大小 1/u.scale。
+//   吸积盘（含近侧半边和光子环）的位置上背景被清成纯黑（diskClear），并且按盘的亮度压掉星星和银河，
+//   盘里不会混进偏蓝的天空色。星星三层（细密 / 中等 / 少量亮星），每颗有自己的闪烁频率和相位（多数很稳，少数偶尔闪一下）；
+//   整片星空绕黑洞缓缓转动（starDrift，各层速度不同，银河跟着转），透过引力透镜看：只在光环附近被拉成短弧，其余是点。
+//   减少动态效果（u.reduce）时不转、不闪。深色页面上星星越过暗场继续往外并逐渐变稀；浅色页面上暗场之外什么都不画。
+//   开销：暗场外的像素在盘面和透镜之前就返回；颗粒和每层星都只查一个（最多 2×2）格子；噪声最多两层；没有粒子循环。
+
+// gradient noise, periodic in x with an integer period P (for seamless azimuth)
+float as_pn(vec2 p, float P) {
+    vec2 i = floor(p); vec2 f = fract(p);
+    vec2 w = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+    float x0 = mod(i.x, P), x1 = mod(i.x + 1.0, P);
+    vec2 ga = hash22(vec2(x0, i.y)) * 2.0 - 1.0, gb = hash22(vec2(x1, i.y)) * 2.0 - 1.0;
+    vec2 gc = hash22(vec2(x0, i.y + 1.0)) * 2.0 - 1.0, gd = hash22(vec2(x1, i.y + 1.0)) * 2.0 - 1.0;
+    float va = dot(ga, f), vb = dot(gb, f - vec2(1.0, 0.0)), vc = dot(gc, f - vec2(0.0, 1.0)), vd = dot(gd, f - vec2(1.0, 1.0));
+    return mix(mix(va, vb, w.x), mix(vc, vd, w.x), w.y);
+}
+
+// disk colour, x: 0 = hottest (inner, approaching) … 1 = coolest (outer).
+// diskHeat 0 = the old gold ramp; 1 = black-body-like: a wide white-hot core, pale yellow, orange, deep red at the rim
+// (the argument is bent towards the hot end first, so that the white-hot zone gets wider)
+vec3 as_ramp(float x) {
+    x = saturate(x);
+    vec3 c = vec3(0.0);
+    if (diskHeat < 0.999) {
+        c = mix(vec3(1.00, 0.97, 0.90), vec3(1.00, 0.80, 0.44), smoothstep(0.00, 0.30, x));
+        c = mix(c, vec3(1.00, 0.53, 0.15), smoothstep(0.25, 0.65, x));
+        c = mix(c, vec3(0.92, 0.25, 0.06), smoothstep(0.60, 1.00, x));
+    }
+    if (diskHeat > 0.001) {
+        float y = x * (1.0 - 0.3 * diskHeat * (1.0 - x));
+        vec3 b = mix(vec3(1.00, 0.97, 0.92), vec3(1.00, 0.88, 0.52), smoothstep(0.06, 0.26, y));
+        b = mix(b, vec3(1.00, 0.56, 0.14), smoothstep(0.22, 0.44, y));
+        b = mix(b, vec3(0.94, 0.28, 0.06), smoothstep(0.40, 0.70, y));
+        b = mix(b, vec3(0.74, 0.12, 0.03), smoothstep(0.66, 1.00, y));
+        c = diskHeat > 0.999 ? b : mix(c, b, diskHeat);
+    }
+    return c;
+}
+
+// saturation around the luma (s = 1 leaves the colour alone)
+vec3 as_sat(vec3 c, float s) {
+    float l = luma(c);
+    return max(vec3(l) + (c - vec3(l)) * s, vec3(0.0));
+}
+
+// fade an octave out once its cells get smaller than ~2 px on screen (n = cells per pixel)
+float as_aa(float n) { return 1.0 - smoothstep(0.22, 0.55, n); }
+
+// gas texture at disk radius r and (rotated) azimuth a. fr / fa: screen footprint of a pixel in r (points) and a (radians).
+float as_tex(float r, float a, float fr, float fa, float sd) {
+    float x = a / TAU;
+    float v = 0.46 * as_pn(vec2(x * 7.0, r * 0.075 + sd), 7.0);                                                   // clumps
+    float w1 = as_aa(max(fr * 0.20, fa * 3.3)), w2 = as_aa(max(fr * 0.46, fa * 8.4)), w3 = as_aa(max(fr * 0.95, fa * 16.0)), w4 = as_aa(fr * 0.55);
+    if (w1 > 0.003) v += 0.44 * w1 * as_pn(vec2(x * 21.0, r * 0.20 + 1.7 * sd), 21.0);                            // streaks
+    if (w2 > 0.003) v += 0.36 * w2 * as_pn(vec2(x * 53.0, r * 0.46 + 2.3 * sd), 53.0);                            // filaments
+    if (w3 > 0.003) v += 0.24 * w3 * as_pn(vec2(x * 101.0, r * 0.95 + 3.1 * sd), 101.0);                          // grain
+    if (w4 > 0.003) v += 0.30 * w4 * as_pn(vec2(x * 3.0, r * 0.55 + 4.7 * sd), 3.0);                              // irregular gaps between rings
+    return v;
+}
+
+// radial window of the disk (where it can emit at all); also the disk's footprint for diskClear
+float as_edge(float r, float Rin, float Rout) {
+    return smoothstep(Rin * 0.96, Rin * 1.08, r) * (1.0 - smoothstep(Rout * 0.58, Rout, r));
+}
+
+// emission of the thin disk at disk-plane point (X, D); D > 0 is behind the hole, X < 0 comes towards us.
+vec3 as_disk(float X, float D, float Rin, float Rout, float fr, float fa, UARG u) {
+    float r = length(vec2(X, D));
+    float edge = as_edge(r, Rin, Rout);
+    if (edge <= 0.0) return vec3(0.0);
+    float a = atan2_(D, X);
+    // differential rotation, integrated through u.phase (runs faster while speaking); two alternating layers bound the shear
+    float rr = Rin / r, rs = sqrt(rr);
+    float om = 2.3 * rr * rs;
+    float T = 6.0;
+    float pa = mod(u.phase, T), pb = mod(u.phase + 0.5 * T, T);
+    float wa = 1.0 - abs(2.0 * pa / T - 1.0);
+    float tex = mix(as_tex(r, a - om * pb, fr, fa, 5.3), as_tex(r, a - om * pa, fr, fa, 0.0), wa);
+    // relativistic beaming: the side coming towards us is brighter and hotter
+    float v = 0.40 * rs;
+    float los = -X / r;
+    float dop = pow(max(1.0 + v * los, 0.05), 2.6);
+    float x01 = saturate((r - Rin) / max(Rout - Rin, 0.001));
+    vec3 col = as_ramp(0.10 + 0.95 * x01 - 0.55 * v * los);
+    float prof = pow(Rin / r, 1.7);
+    // voice: brighter, and bright waves running inwards
+    float voice = 1.0 + 0.45 * u.level + 0.35 * u.peak;
+    if (u.level > 0.001) { float wv = 0.5 + 0.5 * sin(r * 0.42 + u.time * 7.5); wv *= wv; voice += 0.9 * u.level * wv * wv * (1.0 - x01); }
+    float rq = (r - 1.05 * Rin) / (0.10 * Rin);
+    float rim = 1.0 + 0.8 * exp(-rq * rq);                          // the bright inner edge
+    float I = edge * prof * rim * dop * saturate(0.55 + 0.70 * tex) * voice * 2.6;
+    return col * I;
+}
+
+// the black shadow, with the drop of black squeezed out towards Cancel (mc 0…1)
+float as_uneven_capsule(vec2 p, float r1, float r2, float h) {
+    p.x = abs(p.x);
+    float b = (r1 - r2) / h;
+    float a = sqrt(max(1.0 - b * b, 0.0));
+    float k = dot(p, vec2(-b, a));
+    if (k < 0.0) return length(p) - r1;
+    if (k > a * h) return length(p - vec2(0.0, h)) - r2;
+    return dot(p, vec2(a, b)) - r1;
+}
+float as_shadow(vec2 p, float Rs, float mc, float t) {
+    float d = length(p) - Rs;
+    if (mc > 0.001) {
+        float r1 = Rs * 0.52;
+        float r2 = mix(r1, 2.3, mc);
+        float y0 = -Rs * 0.30;
+        float y1 = -(Rs - r2) - 20.0 * mc;
+        vec2 q = vec2(p.x - 1.3 * mc * sin(t * 3.1) * saturate((y0 - p.y) / max(y0 - y1, 1.0)), y0 - p.y);
+        d = smin(d, as_uneven_capsule(q, r1, r2, max(y0 - y1, 0.01)), 6.0 * mc + 0.01);
+    }
+    return d;
+}
+
+// light kicked off the top of the arc towards Send: a soft flare in the disk's own colours (no beam)
+vec3 as_plume(vec2 p, float ms, float S, float Rs, UARG u) {
+    if (ms <= 0.001) return vec3(0.0);
+    float t = u.time;
+    float y0 = Rs * 1.55;
+    float tip = y0 + 3.0 + 12.0 * ms + 190.0 * easeInCubic(saturate(S / 0.70));
+    float yy = (p.y - y0) / max(tip - y0, 0.001);
+    if (yy < -0.6 || yy > 1.3) return vec3(0.0);
+    float sway = 0.9 * sin(p.y * 0.21 - t * 5.0) * saturate(yy);
+    float w = (3.0 + 7.0 * ms) * pow(saturate(1.0 - yy), 0.8) + 1.5;
+    float x = p.x - sway;
+    float body = exp(-pow(x / w, 2.0));
+    float flow = 0.55 + 0.45 * gnoise(vec2(x * 0.35, p.y * 0.14 - t * 5.5)) + 0.30 * gnoise(vec2(x * 0.9, p.y * 0.40 - t * 10.0));
+    float along = smoothstep(-0.6, 0.15, yy) * (1.0 - smoothstep(0.55, 1.15, yy));
+    float I = along * body * saturate(flow) * ms * (0.55 + 0.25 * u.level);
+    return as_ramp(0.35 + 0.35 * saturate(yy)) * I;
+}
+
+// ---- Astra sky --------------------------------------------------------------------------------------------------
+
+// Smooth density d of the dark grains at p (0…1): 1 inside R-E, falling to 0 at R+E (smoothstep). The radius is wobbled by
+// low-frequency noise (2 octaves, amount skyClump), so the edge is gently irregular; skyClump = 0 keeps it round.
+// The noise is only evaluated where it can change the result (continuous: 1 / 0 either way beyond R -/+ (1 + 0.75 skyClump) E).
+float astra_dens(vec2 p, float R, float E, float t) {
+    float r = length(p);
+    float kb = 1.0 + 0.75 * skyClump;   // the wobble moves the edge by at most 0.75 * skyClump * E
+    if (r < R - kb * E) return 1.0;
+    if (r > R + kb * E) return 0.0;
+    if (skyClump > 0.001) {
+        vec2 q = p * 0.024 + vec2(0.017, -0.012) * t;
+        float n = 0.68 * vnoise(q + 3.7) + 0.32 * vnoise(q * 2.3 + 9.1) - 0.5;
+        r += skyClump * 1.5 * E * n;
+    }
+    float tt = saturate((R + E - r) / (2.0 * E));
+    return tt * tt * (3.0 - 2.0 * tt);
+}
+
+// One layer of fine grains: round dots on a jittered grid of cell size S in the point space q (2x2 cells looked up), density d,
+// px = points per pixel. A dot is present when its random value is below d; its radius (in cells) grows with d so that the dots
+// overlap into solid colour as d -> 1. wl = weight of this layer in a cross-fade: dots drop in / out one by one (dithered by their own
+// random number), so the grains stay crisp during the fade. Grain colours: black, dark navy, indigo or violet (the variety fades out as
+// the grains merge into solid), plus a small share of faint coloured specks (blue, white, warm) that fades out with density.
+// Returns premultiplied colour and coverage.
+vec4 astra_grains(vec2 q, float S, float d, float px, float salt, float wl) {
+    vec2 g = q / S;
+    vec2 c0 = floor(g - 0.5);
+    float rad = mix(0.27, 0.80, smoothstep(0.12, 0.95, d));
+    float jit = mix(0.84, 0.20, smoothstep(0.25, 0.95, d));
+    float aa = px / S;
+    float spk = 0.16 * (1.0 - smoothstep(0.45, 0.90, d));
+    float v = 1.0 - smoothstep(0.55, 0.95, d);
+    vec3 ind = mix(skyColor, skyColor * vec3(1.6, 1.3, 2.6) + vec3(0.004, 0.004, 0.030), v);
+    vec3 vio = mix(skyColor, skyColor * vec3(3.2, 1.2, 2.8) + vec3(0.022, 0.000, 0.050), v);
+    vec3 nav = skyColor, blk = skyColor * (1.0 - v);
+    float cw = 0.0, best = 0.0;
+    vec3 acc = vec3(0.0);
+    for (int j = 0; j < 2; j++) {
+        for (int i = 0; i < 2; i++) {
+            vec2 c = c0 + vec2(float(i), float(j));
+            vec2 hv = hash22(c + salt);
+            float pres = saturate((d - hv.x) * 24.0);
+            if (pres <= 0.0) continue;
+            pres *= saturate((1.15 * wl - fract(hv.x * 61.7 + hv.y * 5.3)) * 6.0);
+            if (pres <= 0.0) continue;
+            vec2 jv = vec2(hv.y, fract(hv.y * 71.3 + hv.x * 13.7));
+            vec2 o = g - (c + 0.5 + (jv - 0.5) * jit);
+            float cov = saturate((rad * (0.78 + 0.44 * jv.x) - length(o)) / aa + 0.5) * pres;
+            if (cov <= 0.0) continue;
+            float k = fract(hv.x * 173.7 + hv.y * 9.13);
+            vec3 col = k < 0.30 ? blk : (k < 0.62 ? nav : (k < 0.86 ? ind : vio));
+            float ks = fract(hv.x * 411.3 + hv.y * 7.7);
+            if (ks < spk) col = k < 0.5 ? vec3(0.26, 0.40, 0.86) : (k < 0.8 ? vec3(0.50, 0.55, 0.68) : vec3(0.80, 0.50, 0.28));
+            acc += col * cov;
+            cw += cov;
+            best = max(best, cov);
+        }
+    }
+    return vec4(acc / max(cw, 0.0001) * best, best);
+}
+
+// The dark sky at p as premultiplied colour + alpha, for grain density d (the disk footprint is already in d): the grains (two layers whose
+// coordinates slide outwards and cross-fade, so that the grains flow away from the hole and loop seamlessly), solid fill where they merge,
+// and the smooth radial alpha that edgeGrain blends in. tm = time, px = points per pixel.
+vec4 astra_sky(vec2 p, float d, float tm, float px, float seed) {
+    vec4 sm = vec4(skyColor * d, d);
+    if (edgeGrain < 0.002 || d > 0.999) return d > 0.999 ? vec4(skyColor, 1.0) : sm;
+    float S = max(grainSize, 0.2);
+    vec4 gr;
+    if (grainDrift > 0.002) {
+        float ph = grainDrift * tm / 9.0;
+        float pa = fract(ph), pb = fract(ph + 0.5);
+        float wa = 1.0 - abs(2.0 * pa - 1.0);
+        vec2 dir = p / max(length(p), 0.001);
+        gr = vec4(0.0);
+        if (wa > 0.003) gr = astra_grains(p - dir * (pa * 14.0), S, d, px, seed, wa);
+        if (wa < 0.997) gr = over(gr, astra_grains(p - dir * (pb * 14.0), S, d, px, seed + 37.0, 1.0 - wa));
+    } else {
+        gr = astra_grains(p, S, d, px, seed, 1.0);
+    }
+    gr = over(vec4(skyColor, 1.0) * smoothstep(0.90, 0.985, d), gr);
+    return mix(sm, gr, edgeGrain);
+}
+
+// star colour from a random number k: blue-white, white, warm yellow and (rarely) orange, in the ratios starBlue / starWarm
+vec3 astra_scol(float k) {
+    float nrm = 1.0 / max(1.0, starBlue + starWarm);
+    vec3 c = mix(vec3(1.00, 0.98, 0.95), vec3(0.52, 0.67, 1.00), step(k, starBlue * nrm));
+    vec3 w = mix(vec3(1.00, 0.82, 0.52), vec3(1.00, 0.62, 0.36), step(0.86, fract(k * 23.0)));
+    return mix(c, w, step(1.0 - starWarm * nrm, k));
+}
+
+// star density multiplier at a source-plane point: full inside the field, thinning out beyond it (starOut) and
+// fading to nothing well before the edge of the HUD window; richer inside the Milky Way band
+float astra_bacross(vec2 p, vec2 bd) { return dot(p, vec2(-bd.y, bd.x)) - 0.45 * milkyWidth; }
+
+float astra_dn(vec2 pc, float R, float E, vec2 bd) {
+    float r = length(pc);
+    float so = smoothstep(R - 0.5 * E, R + 0.5 * E, r);
+    float fo = 1.0 - smoothstep(R + 0.5 * E, max(min(R + 2.5 * E, 136.0), R + 0.5 * E + 1.0), r);
+    float ax = astra_bacross(pc, bd) / milkyWidth;
+    return mix(1.0, starOut * fo, so) * (1.0 + 1.5 * milky * exp(-ax * ax));
+}
+
+// twinkle of one star (h, k = its random numbers): its own rate (0.5-3 Hz) and phase; about a third stay almost steady; the bright ones
+// (k > 0.72) now and then flare for about half a second
+float astra_tw(float h, float k, float t) {
+    float f = fract(h * 37.31);
+    float ph = TAU * fract(h * 91.7);
+    float a = TAU * (0.5 + 2.5 * f * f) * t + ph;
+    float m = 1.0 - starTwinkle * (k < 0.34 ? 0.10 : 0.30 + 0.70 * k) * (0.5 + 0.30 * sin(a) + 0.20 * sin(1.73 * a + 0.57 * ph));
+    if (k > 0.72) {
+        float fs = max(sin(TAU * (0.09 + 0.10 * fract(h * 53.7)) * t + 5.0 * ph), 0.0);
+        float f2 = fs * fs, f4 = f2 * f2, f8 = f4 * f4;
+        m += 1.4 * starTwinkle * f8 * f8 * f2;
+    }
+    return m;
+}
+
+// One layer of point stars, ONE cell lookup per pixel: star centres stay in the middle of their cell so the profile never
+// crosses a cell border. base * dn = chance of a star per cell; the rank q makes most stars faint and a few bright.
+// b = source-plane position in this layer's (rotating) frame; rd = unit radial direction of the pixel in that frame; st2 / sr2 = squared
+// scale factors of the lens correction (tangential / radial), which keep the stars point-like away from the ring (see skin_astra).
+vec3 astra_pts(vec2 b, vec2 rd, float st2, float sr2, float S, float base, float rad, float amp, float salt, float dn, float t) {
+    vec2 c = floor(b / S);
+    float h = hash12(c + salt);
+    float dens = min(base * dn, 0.95);
+    float thr = 1.0 - dens;
+    if (h < thr) return vec3(0.0);
+    vec2 d = b - (c + 0.30 + 0.40 * hash22(c + salt + 5.0)) * S;
+    float k = hash11(h * 91.7 + salt);
+    float s = rad * (0.75 + 0.5 * k);
+    float dr = dot(d, rd);
+    float g = exp(-(st2 * dot(d, d) + (sr2 - st2) * dr * dr) / (s * s));
+    if (g < 0.012) return vec3(0.0);                // away from the star: skip twinkle and colour
+    float q = (h - thr) / max(dens, 0.001);
+    float e = g * (0.16 + 0.84 * q * q) * smoothstep(0.0, 0.22, q) * amp;
+    e *= astra_tw(h, k, t);
+    return astra_scol(fract(h * 173.3)) * e;
+}
+
+// The few bright stars: a tiny soft glow and a faint 4-point spike (the spikes belong to the screen, not to the turning sky).
+// ONE cell lookup per pixel: cells are 30pt, the star sits in the middle third and the arms are tapered to nothing by 9.6pt, so nothing
+// is ever clipped by a cell border. The star density is taken at the star (not at the pixel), so the arms never get cut by the fade.
+// b = source position in this layer's frame (without the seed offset so), cs = (cos, sin) of the layer's rotation, ph = unit direction
+// of the pixel, st / sr = lens correction scales, bd / R / E = band direction and field size for astra_dn.
+vec3 astra_bright(vec2 b, vec2 so, vec2 cs, vec2 ph, float st, float sr, vec2 bd, float R, float E, float t) {
+    vec2 g = (b + so) / 30.0;
+    vec2 c = floor(g);
+    float h = hash12(c + 71.0);
+    if (h < 1.0 - min((0.07 + 0.34 * starDensity) * (1.0 + 1.5 * milky), 0.9)) return vec3(0.0);
+    vec2 jv = hash22(c + 91.0) - 0.5;
+    float dn = astra_dn((c + 0.5 + jv * 0.34) * 30.0 - so, R, E, bd);
+    float dens = min((0.07 + 0.34 * starDensity) * dn, 0.9);
+    float thr = 1.0 - dens;
+    if (h < thr) return vec3(0.0);
+    vec2 d0 = (g - c - 0.5 - jv * 0.34) * 30.0;
+    vec2 ds = vec2(cs.x * d0.x - cs.y * d0.y, cs.y * d0.x + cs.x * d0.y);
+    vec2 d = sr * dot(ds, ph) * ph + st * dot(ds, vec2(-ph.y, ph.x)) * vec2(-ph.y, ph.x);
+    vec2 ad = abs(d);
+    if (dot(d, d) > 90.0 && min(ad.x, ad.y) > 1.6) return vec3(0.0);   // outside the glow and off the spike axes
+    float q = (h - thr) / max(dens, 0.001);
+    float k = hash11(h * 57.3 + 3.0);
+    float r = length(d);
+    float sz = 0.62 + 0.40 * k;
+    float len = 3.0 + 5.0 * k;
+    float spike = exp(-ad.y / len - d.x * d.x / 0.30) * (1.0 - smoothstep(4.0, 9.6, ad.y)) + exp(-ad.x / len - d.y * d.y / 0.30) * (1.0 - smoothstep(4.0, 9.6, ad.x));
+    float I = exp(-r * r / (sz * sz)) + 0.24 * exp(-r / (1.4 + 1.4 * k)) + 0.30 * spike;
+    return astra_scol(fract(h * 211.7)) * I * astra_tw(h, 0.35 + 0.65 * k, t) * (1.3 + 1.3 * q) * smoothstep(0.0, 0.15, q);
+}
+
+// The Milky Way: a soft diagonal band (direction bd) with a warm core, bluish edges and dark dust lanes.
+// rgb = light (before the milky gain), a = how dark the dust lane is here (0…1). 2 octaves of noise, shared with the lanes.
+vec4 astra_band(vec2 p, vec2 bd, float t) {
+    float w = milkyWidth;
+    float along = dot(p, bd) - 0.9 * w - 10.0, across = astra_bacross(p, bd);
+    float ax = across / w;
+    vec2 q = vec2(along, across * 1.6) / (0.9 * w + 8.0) + vec2(0.012 * t, 0.0) + 5.3;
+    float n1 = vnoise(q);
+    float n2 = vnoise(q * 2.6 + 7.9);
+    float cl = saturate(0.5 + 1.5 * (0.65 * n1 + 0.35 * n2 - 0.5));            // cloudy patches
+    float ab = along / (2.2 * w + 24.0);
+    float bulge = exp(-ab * ab);                                               // brighter towards the middle of the band
+    float G = (0.85 * exp(-ax * ax) + 0.30 * exp(-0.14 * ax * ax)) * (0.45 + 0.55 * bulge) * cl;
+    float lc = (across - (0.10 + 0.55 * (n2 - 0.5)) * w) / (0.20 * w + 1.5);   // a wandering rift beside the centre line
+    float lane = exp(-lc * lc) * (0.30 + 0.70 * smoothstep(0.35, 0.62, n1));
+    G *= 1.0 - 0.9 * milkyDust * lane;
+    float wc = across / (0.62 * w);
+    float warm = milkyWarm * exp(-wc * wc) * (0.30 + 0.70 * bulge);
+    return vec4(mix(vec3(0.44, 0.58, 1.00), vec3(1.00, 0.80, 0.52), saturate(warm)) * G, lane);
+}
+
+vec4 skin_astra(vec2 p, UARG u) {
+    float S = u.send, C = u.cancel;
+    float L = u.level, pk = u.peak, t = u.time;
+    float ms = hud_smoother(0.03, 0.97, aimSend(u));
+    if (S > 0.0) ms = 1.0;
+    if (C > 0.0) ms = 0.0;
+
+    // Far outside the sky nothing is drawn (the disk ends at Rout = 61pt, the aimed Send plume and the black drop at about 45pt;
+    // release animations set S / C): the stars thin out to nothing by R + 2.5E (at most 136pt) and the band bloom (Eg, a 52pt Gaussian
+    // along the disk) is < 1/255 past 108pt. Such pixels, more than half of the window, skip the geometry, the timelines and the lens
+    // inversion below and leave early. The four fwidth() calls are still made by EVERY pixel, in uniform control flow, before that exit:
+    // a far pixel just feeds them constants (a pixel next to the cut circle reads a meaningless derivative, which nothing visible uses:
+    // the disk is far inside). Nothing after the exit uses derivatives: the grain antialiasing comes from the pixel size 1 / u.scale.
+    float Rlim = min(max(skyRadius + 2.5 * skyEdge + 8.0, 108.0), 146.0);
+    bool outside = dot(p, p) > Rlim * Rlim && S == 0.0 && C == 0.0 && ms < 0.01;
+    float sFly = 0.0, sHole = 0.0, c1 = 0.0, c2 = 0.0, Gs = 1.0, Rs = 1.0, K = 1.0, Rin = 1.0, Rout = 1.0;
+    float SI = 0.15;
+    vec2 pd = p, dir = vec2(1.0, 0.0), th = p;
+    float sd = 1.0, hole = 0.0, rho = 1.0, flare = 0.0, lensOK = 0.0;
+    float Xl = 0.0, Dl = 0.0, rl = 0.0, Xf = 0.0, Df = 0.0, rf = 0.0;
+    if (!outside) {
+        float g = 0.2 + 0.8 * u.appear;
+        float mc = hud_smoother(0.03, 0.97, aimCancel(u));
+        if (S > 0.0) mc = 0.0;
+        if (C > 0.0) mc = 1.0 - smoothstep(0.0, 0.30, C);   // the drop of black is drawn back in first
+
+        // release timelines
+        sFly = easeInCubic(saturate(S / 0.55));      // the ring of light flies to Send, shrinking
+        sHole = smoothstep(0.0, 0.45, S);            // meanwhile the hole collapses
+        c1 = easeInOut(saturate(C / 0.55));
+        c2 = easeInCubic(saturate((C - 0.42) / 0.50));
+        Gs = g * (1.0 - c2);
+
+        // geometry (points). The voice makes the gravity "breathe": the shadow and the arcs swell on syllables.
+        float beat = sin(t * 17.0);
+        Rs = 19.0 * Gs * (1.0 + 0.035 * L + 0.045 * pk * beat) * (1.0 + 0.75 * c1) * (1.0 - sHole);
+        K = 20.6 * Gs * (1.0 + 0.10 * L + 0.09 * pk * sin(t * 17.0 + 0.7)) * (1.0 + 0.55 * c1);
+        Rin = 22.8 * Gs * (1.0 + 0.55 * c1);
+        Rout = 61.0 * Gs * (1.0 - 0.40 * c1);
+
+        // the disk (band + arcs) is flung up to Send on send
+        pd = (p - vec2(0.0, 47.0 * sFly)) / max(1.0 - 0.8 * sFly, 0.05);
+        sd = as_shadow(p, Rs, mc, t);
+        hole = cover(sd, u);
+
+        // lens lookup position: pixels beside the drop of black are measured from its outline, so the light hugs it
+        rho = length(pd);
+        dir = pd / max(rho, 1e-3);
+        th = S > 0.0 ? pd : dir * (Rs + max(sd, 0.0));
+        // Send aim: the middle of the upper arc bulges up where the plume leaves it
+        flare = ms * exp(-abs(th.x) / 8.0) * smoothstep(0.85 * Rs, 1.7 * Rs, th.y);
+        th.y /= 1.0 + 0.27 * flare;
+
+        // far half through the lens (primary image above, secondary below)
+        float r2 = max(dot(th, th), 1e-2);
+        float den = 1.0 + K * th.y / (SI * r2);
+        float by = th.y / (abs(den) < 1e-3 ? (den < 0.0 ? -1e-3 : 1e-3) : den);
+        float bx = th.x * (1.0 - K * by / (SI * r2));
+        lensOK = (by > 0.0 && (th.y > 0.0 || den < 0.0)) ? 1.0 : 0.0;
+        Xl = bx; Dl = min(by, 1e4) / SI;
+        rl = length(vec2(Xl, Dl));
+        // near half, straight on
+        Xf = pd.x; Df = min(pd.y, 0.0) / SI;
+        rf = length(vec2(Xf, Df));
+    }
+    float frl = fwidth(rl);
+    float fal = fwidth(Xl / max(rl, 1e-3)) + fwidth(Dl / max(rl, 1e-3));
+    float frf = fwidth(rf);
+    float faf = fwidth(Xf / max(rf, 1e-3)) + fwidth(Df / max(rf, 1e-3));
+    if (outside) return vec4(0.0);
+
+    float Lb = u.reduce > 0.5 ? 0.0 : L;
+    float tm = u.reduce > 0.5 ? 0.0 : t;
+    float tn = tm + 40.0 * u.seed;   // noise clock: slow drift, and a different outline / band every time the HUD appears
+    float shr = max(Gs * (1.0 - smoothstep(0.05, 0.75, S)), 0.02);   // shrinks away on send / cancel
+    float Rf = skyRadius * shr * (1.0 + 0.03 * Lb + 0.012 * sin(0.5 * tm));
+    float Wf = max(skyEdge * shr, 0.3);
+    float dsm = astra_dens(p, Rf, Wf, tn);   // density of the dark grains (0 = nothing … 1 = solid)
+
+    float lensW = lensOK * (th.y > 0.0 ? 1.0 + 0.6 * flare : 0.6);
+    if (S > 0.0) lensW *= smoothstep(18.0 * Gs, 20.0 * Gs, rho);   // the flying ring has no hole of its own
+    vec3 Eb = lensW > 0.0 ? as_disk(Xl, Dl, Rin, Rout, frl, fal, u) * lensW : vec3(0.0);
+    vec3 Ef = pd.y < 0.0 ? as_disk(Xf, Df, Rin, Rout, frf, faf, u) : vec3(0.0);
+    // footprint of the disk (its two images) 0…1: the dark sky is solid and pure black under it (diskClear)
+    float foot = max(lensW > 0.0 ? as_edge(rl, Rin, Rout) * saturate(lensW) : 0.0, pd.y < 0.0 ? as_edge(rf, Rin, Rout) : 0.0);
+
+    // photon ring (and a faint second one) right on the shadow's outline; brighter on the approaching side
+    float rp = max(length(p), 1e-3);
+    vec3 Er = vec3(0.0);
+    if (sd < 9.0 && sd > -4.0) {
+        float qa = (sd - 0.30) / 0.42, qb = (sd - 1.5) / 0.50, qc = (sd - 2.4) / 2.4;
+        float dl = (1.0 - 0.35 * p.x / rp) * smoothstep(0.5, 3.0, Rs);
+        float ring = (1.55 * exp(-qa * qa) + 0.30 * exp(-qb * qb)) * dl * (1.0 + 0.8 * pk + 0.25 * L);
+        float halo = 0.16 * exp(-qc * qc);                                       // a warm glow hugging the ring
+        Er = as_ramp(0.16) * ring + as_ramp(0.42) * (halo * dl);
+    }
+
+    // soft bloom around the upper arc and along the band
+    float gl = 0.0;
+    float ga = (rho - 1.55 * Rs) / (0.55 * Rs + 0.5), gy = (pd.y + 4.6 * Gs) / (4.8 * Gs + 0.5);
+    if (abs(ga) < 3.4) gl += 0.20 * exp(-ga * ga) * (0.25 + 0.75 * smoothstep(-0.2, 0.9, pd.y / max(rho, 1e-3))) * (1.0 - 0.3 * pd.x / max(rho, 1e-3));
+    if (abs(gy) < 3.4) { float gx = pd.x / (52.0 * Gs + 1.0); gl += 0.16 * exp(-gy * gy - gx * gx) * (1.0 - 0.3 * gx); }
+    gl *= (1.0 + 0.5 * L) * (1.0 - smoothstep(0.3, 0.9, S));
+    vec3 Eg = gl > 0.0015 ? as_ramp(0.60) * gl : vec3(0.0);
+
+    // Disk light: both images of the disk, the photon ring and the bloom. diskBright is its gain, diskSat its saturation. Nothing else
+    // (stars, band, sky colour) may be mixed into these pixels, so the light below is cleared where the disk shines (diskClear).
+    float diskFade = (1.0 - 0.65 * c1) * (1.0 + 0.6 * sFly) * (1.0 - smoothstep(0.50, 0.75, S));
+    float fp = diskClear * smoothstep(0.0, 0.6, foot);                      // footprint clear amount
+    float dEff = max(dsm, fp);                                              // grain density incl. the solid backing under the disk
+    float gk = mix(smoothstep(0.05, 0.60, dEff), 1.0, u.dark);              // on a light page the bloom ends with the dark sky (no peach haze on white)
+    vec3 Ed = ((Eb + Eg * gk) * diskFade + Er) * (1.0 - hole) + Ef * diskFade;
+    Ed = as_sat(Ed * diskBright, diskSat);
+    float sup = (1.0 - fp) * mix(1.0, exp(-10.0 * luma(Ed)), diskClear);    // what is left of stars / band under the disk light
+
+    // Astra: the dark sky the hole sits in: fine grains that merge into solid black (solid and pure black under the disk).
+    vec4 G = dEff > 0.002 ? astra_sky(p, dEff, tm, 1.0 / u.scale, 61.0 * u.seed) : vec4(0.0);
+    G.rgb *= 1.0 - fp;
+    G *= (u.contrast > 0.5 ? 1.0 : skyOpacity) * (1.0 - smoothstep(0.75, 0.95, S));
+
+    // Stars and the Milky Way, seen through a softened point lens: the source plane is turned slowly about the hole (starDrift) and
+    // the stars are lensed as bs = p * lt (lt, lr = tangential / radial eigenvalues of the lens map). Their SHAPE is corrected to
+    // stay point-like away from the Einstein ring; within ~1.3x of it they may stretch into short tangential arcs (at most 3x).
+    // On a light page nothing exists where there is no dark sky behind; on a dark page the stars carry on and thin out.
+    float tE2 = lensStars * 2.56 * Rs * Rs;
+    float rp2 = max(dot(p, p), 0.01);
+    float lt = 1.0 - tE2 / rp2, lr = 1.0 + tE2 / rp2;
+    vec2 bs = p * lt;
+    float vis = mix(u.dark > 0.5 ? (1.0 - smoothstep(0.15, 0.55, S)) * (1.0 - c1) : 0.0, 1.0, smoothstep(0.35, 0.80, dEff));
+    vec3 Es = vec3(0.0), Em = vec3(0.0);
+    if (u.contrast < 0.5 && vis > 0.004 && hole < 0.999 && sup > 0.004) {
+        // band direction: cos / sin of milkyAngle (|angle| <= 90 deg) by polynomial, which is cheap and accurate to 3e-5
+        float ma = milkyAngle * 0.0174533, m2 = ma * ma;
+        vec2 bd = vec2(1.0 + m2 * (-0.5 + m2 * (0.0416667 + m2 * (-0.00138889 + m2 * 0.0000248016))),
+                       ma * (1.0 + m2 * (-0.166667 + m2 * (0.00833333 + m2 * (-0.000198413 + m2 * 0.00000275573)))));
+        // The source plane turns about the hole: 6 deg/s at starDrift = 1 for the middle layer and the band, 0.8x for the fine stars and
+        // 1.2x for the bright ones (parallax). All three rotations come from ONE cos / sin (angle = 5 beta, layers at 4, 5 and 6 beta).
+        float ang = starDrift * 0.1047 * tm;
+        float b5 = 0.2 * ang;
+        vec2 q1 = vec2(cos(b5), sin(b5));
+        vec2 q2 = vec2(q1.x * q1.x - q1.y * q1.y, 2.0 * q1.x * q1.y);
+        vec2 r1 = vec2(q2.x * q2.x - q2.y * q2.y, 2.0 * q2.x * q2.y);
+        vec2 r2 = vec2(r1.x * q1.x - r1.y * q1.y, r1.y * q1.x + r1.x * q1.y);
+        vec2 r3 = vec2(r1.x * q2.x - r1.y * q2.y, r1.y * q2.x + r1.x * q2.y);
+        float lane = 0.0;
+        if (milky > 0.001 && dsm > 0.003) {
+            vec4 bnd = astra_band(vec2(r2.x * p.x + r2.y * p.y, r2.x * p.y - r2.y * p.x), bd, tn);
+            Em = bnd.rgb * (0.50 * milky * dsm);
+            lane = bnd.a;
+        }
+        vec2 b2 = vec2(r2.x * bs.x + r2.y * bs.y, r2.x * bs.y - r2.y * bs.x);
+        float dn = astra_dn(b2, Rf, Wf, bd);
+        float gate = min(Rf + 2.5 * Wf, 136.0) + 6.0;   // the arms of a bright star at the far end of the fade still need drawing
+        if (dn > 0.003 || dot(b2, b2) < gate * gate) {
+            vec2 ph = p / sqrt(rp2);                          // direction of the pixel (the lens' radial axis)
+            float alt = max(abs(lt), 0.06);
+            float wl = lensStars * (1.0 - smoothstep(1.0, 1.4, sqrt(rp2 / max(tE2, 0.01))));
+            float sT = max(1.0 / (mix(1.0, min(1.0 / alt, 3.0), wl) * alt), 0.8);           // tangential scale (arcs at most 3x long)
+            float sR = max(1.0 / (mix(1.0, 1.0 / lr, 0.3 * wl) * lr), 0.8);                 // radial scale
+            vec2 b1 = vec2(r1.x * bs.x + r1.y * bs.y, r1.x * bs.y - r1.y * bs.x);
+            vec2 b3 = vec2(r3.x * bs.x + r3.y * bs.y, r3.x * bs.y - r3.y * bs.x);
+            vec2 e1 = vec2(r1.x * ph.x + r1.y * ph.y, r1.x * ph.y - r1.y * ph.x);
+            vec2 e2 = vec2(r2.x * ph.x + r2.y * ph.y, r2.x * ph.y - r2.y * ph.x);
+            vec2 so = vec2(u.seed * 97.0, u.seed * 61.0);
+            vec3 stc = astra_pts(b1 + so, e1, sT * sT, sR * sR, 4.6, 0.85 * starDensity, 0.46, 1.10, 17.0, dn, tm)
+                     + astra_pts(b2 + so, e2, sT * sT, sR * sR, 10.0, 0.30 * starDensity, 0.80, 1.30, 43.0, dn, tm)
+                     + astra_bright(b3, so, r3, ph, sT, sR, bd, Rf, Wf, tm);
+            Es = stc * starBright * (1.0 - 0.65 * milkyDust * lane) * (1.0 + 0.3 * Lb) * vis;
+        }
+        Es *= sup;
+        Em *= sup;
+    }
+
+    // the Send plume
+    vec3 Ep = as_plume(p, ms, S, 19.0 * Gs, u);
+
+    // final flash when the cancel collapse completes; a glint at Send when the ring arrives
+    float flT = saturate((C - 0.80) / 0.20);
+    float flash = C > 0.0 ? exp(-pow((length(p) - 30.0 * flT) / 2.2, 2.0)) * sin(PI * flT) * 1.6 : 0.0;
+    float gT = saturate((S - 0.42) / 0.40);
+    vec2 gq = (p - vec2(0.0, 47.0)) / vec2(3.0 + 16.0 * gT, 2.0 + 3.0 * gT);
+    flash += S > 0.0 ? exp(-dot(gq, gq)) * sin(PI * gT) * 2.2 : 0.0;
+
+    vec3 E = Ed + (Es + Em) * (1.0 - hole) + Ep * (1.0 - smoothstep(0.0, 0.35, S)) + (flash > 0.001 ? as_ramp(0.1) * flash : vec3(0.0));
+    vec3 col = 1.0 - exp(-E * 1.45);
+    float a = max(col.r, max(col.g, col.b));
+    vec4 base = over(vec4(0.0, 0.0, 0.0, hole), G);
+    vec4 outc = over(vec4(col, a), base);
+    float endFade = (1.0 - smoothstep(0.85, 1.0, S)) * (1.0 - smoothstep(0.96, 1.0, C));
+    return outc * endFade * (1.0 - u.fade);
+}

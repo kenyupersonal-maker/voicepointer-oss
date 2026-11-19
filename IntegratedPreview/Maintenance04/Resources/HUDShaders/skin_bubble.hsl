@@ -1,0 +1,124 @@
+// 泡泡（2026-11-10 按主题重做；上一版泡泡里放着语音条，整颗发白，Ken：泡泡的概念没问题，但做得丑，
+// 里面跳的东西应该是这个主题自己的东西）。
+// 主题：就一颗肥皂泡，里面什么都没有。由此反推：
+// - 材质：中间几乎全透明，颜色集中在边上那一圈薄膜（按膜厚算出来的干涉色），一条很细的泡壁，
+//   左上一块窗形高光，右下一块淡淡的背面倒影；
+// - 说话时动的是泡泡自己：随声音鼓起来、泡壁发颤，声音一大就从上半边冒出小泡泡，往上飘一段后消失；
+// - 往上推：像被从下面吹了一口气，拉成蛋形往上浮，小泡泡跟着往上涌；松手飘上去，到上面破开；
+// - 往下推：泡泡往下沉、变扁，膜被抽薄、颜色褪掉（要破的样子）；松手当场破掉，溅出几滴水珠。
+
+// Interference of a soap film `th` nm thick at incidence cos `ct` (refractive index 1.33), per colour channel.
+vec3 bb_film(float th, float ct) {
+    float opd = 2.0 * 1.33 * th * ct;
+    vec3 lambda = vec3(650.0, 532.0, 450.0);
+    vec3 phase = TAU * opd / lambda + PI;          // reflection at the outer surface flips the phase
+    return 0.5 + 0.5 * cos(phase);
+}
+
+// A window-shaped softbox (four panes) seen at reflection direction xy.
+float bb_window(vec2 rxy, vec2 at, vec2 size) {
+    vec2 w = (rxy - at) / size;
+    return (1.0 - smoothstep(0.78, 1.0, max(abs(w.x), abs(w.y)))) * smoothstep(0.05, 0.12, abs(w.x)) * smoothstep(0.06, 0.14, abs(w.y));
+}
+
+// One bubble of radius R round the origin. drain 0…1 thins the film; detail 1 draws the full flowing film.
+vec4 bb_draw(vec2 q, float R, float drain, float flow, float detail, UARG u) {
+    float d = length(q) - R;
+    if (d > 1.5) return vec4(0.0);
+    float dark = u.dark;
+    vec2 nq = q / R;
+    float rr = min(dot(nq, nq), 1.0);
+    float ct = sqrt(1.0 - rr);
+    vec2 fp = nq * 2.0 + vec2(0.0, -flow * 0.3);
+    float swirl = detail > 0.5
+        ? fbm3(fp + vec2(fbm3(fp * 1.3 + flow * 0.2), fbm3(fp * 1.1 - flow * 0.17)) * 1.4)
+        : gnoise(fp * 1.4 + flow * 0.3) * 0.7;
+    // the film drains toward the top; a draining bubble is thin everywhere
+    float th = mix(110.0, 620.0, saturate(0.52 - 0.40 * nq.y + 0.55 * swirl - 0.42 * drain));
+    vec3 film = bb_film(th, max(ct, 0.25));
+    film = saturate(pow(film, vec3(1.3)) * 1.35);
+    float rim = pow(1.0 - ct, 2.6);
+    // colour lives in the film near the rim; the middle is a whisper
+    float a = (0.045 + 0.64 * rim) * (1.0 - 0.45 * drain);
+    vec3 col = mix(dark > 0.5 ? vec3(0.80, 0.88, 1.0) : vec3(0.97), film, 0.90);
+    // the wall: one thin line, a touch darker on the lit page so the bubble has an outline there
+    float wall = exp(-pow((-d - 0.55) / 0.55, 2.0));
+    vec3 wallC = dark > 0.5 ? vec3(0.86, 0.92, 1.0) : mix(vec3(0.60, 0.66, 0.78), film, 0.45);
+    col = mix(col, wallC, wall * 0.85);
+    a = max(a, wall * (dark > 0.5 ? 0.80 : 0.62));
+    // the window, top left (the reflection direction is 2·n.z·n.xy), and its faint image on the back wall
+    vec2 rxy = nq * (2.0 * ct);
+    float win = bb_window(rxy, vec2(-0.46, 0.56), vec2(0.27, 0.21));
+    float back = bb_window(-nq, vec2(-0.40, 0.46), vec2(0.20, 0.15)) * 0.30;
+    float glint = saturate(win + back);
+    col = mix(col, vec3(1.0), glint);
+    a = max(a, glint * 0.92);
+    a *= cover(d, u);
+    return vec4(saturate(col) * a, a);
+}
+
+// The burst: a thinning ring and a few droplets, t 0…1 since the pop.
+vec4 bb_pop(vec2 p, vec2 c0, float R, float t, UARG u) {
+    vec4 acc = vec4(0.0);
+    vec3 wet = u.dark > 0.5 ? vec3(0.86, 0.92, 1.0) : vec3(0.62, 0.70, 0.84);
+    float ring = abs(length(p - c0) - R * (1.0 + 0.5 * t)) - 0.7 * (1.0 - t);
+    float ra = cover(ring, u) * (1.0 - t) * (1.0 - t) * 0.75;
+    acc = over(vec4(wet * ra, ra), acc);
+    for (int i = 0; i < 7; i++) {
+        float fi = float(i);
+        float ang = fi * 0.897 + 0.4 + hash11(fi + u.seed) * 0.5;
+        float dist = R * (0.9 + 1.1 * t) * (0.8 + 0.4 * hash11(fi * 3.1 + u.seed));
+        vec2 dp = c0 + vec2(cos(ang), sin(ang)) * dist + vec2(0.0, -34.0 * t * t);
+        float dd = length(p - dp) - 1.5 * (1.0 - 0.6 * t);
+        float da = cover(dd, u) * (1.0 - t);
+        acc = over(vec4(wet * da, da), acc);
+    }
+    return acc;
+}
+
+vec4 skin_bubble(vec2 p, UARG u) {
+    float S = u.send, C = u.cancel;
+    float ms = hud_smoother(0.0, 1.0, snapSend(u));
+    float mc = hud_smoother(0.0, 1.0, snapCancel(u));
+    if (S > 0.0) { ms = 1.0; mc = 0.0; }
+    if (C > 0.0) { mc = 1.0; ms = 0.0; }
+    float L = u.level, pk = u.peak, t = u.time;
+    float g = max(0.2 + 0.8 * u.appear, 0.001);
+    // send: float up with a sway, pop at 72 %; cancel: pop right away
+    float popS = 0.72, popC = 0.18;
+    float up = easeInOut(saturate(S / popS));
+    vec2 c0 = vec2(5.0 * sin(up * 5.0) * up, 9.0 * ms - 7.0 * mc + 104.0 * up);
+    float R = 30.0 * g * (1.0 + 0.10 * L + 0.05 * pk);
+    if (S > popS) return bb_pop(p, c0, R, saturate((S - popS) / (1.0 - popS)), u) * (1.0 - u.fade);
+    if (C > popC) return bb_pop(p, c0, R, saturate((C - popC) / (1.0 - popC)), u) * (1.0 - u.fade);
+
+    // the small bubbles the voice blows off the upper half; they rise, wander and wink out
+    vec4 acc = vec4(0.0);
+    float rising = max(ms, up);
+    for (int i = 0; i < 7; i++) {
+        float fi = float(i);
+        float cyc = t / (1.25 - 0.45 * rising) + fi / 7.0;
+        float age = fract(cyc);
+        float id = floor(cyc) * 7.0 + fi;
+        float h1 = hash11(id * 1.31 + 2.0), h2 = hash11(id * 2.17 + 5.0), h3 = hash11(id * 3.71 + 9.0);
+        float voice = smoothstep(0.10 + 0.30 * h3, 0.30 + 0.30 * h3, L + 0.6 * pk);
+        float show = max(voice, rising * step(h3, 0.75)) * (1.0 - mc) * step(S, 0.0001);
+        if (show <= 0.001) continue;
+        float a0 = 1.5708 + (h1 - 0.5) * 2.3;
+        vec2 from = c0 + vec2(cos(a0), sin(a0)) * (R + 3.0);
+        vec2 pos = from + vec2(sin(age * 5.0 + h2 * 6.0) * 4.0 + cos(a0) * 10.0 * age, (30.0 + 22.0 * h2 + 26.0 * rising) * age);
+        float rs = (2.2 + 3.6 * h2) * smoothstep(0.0, 0.18, age) * g;
+        float life = 1.0 - smoothstep(0.72, 0.92, age);
+        acc = over(bb_draw(p - pos, rs, 0.0, t, 0.0, u) * (show * life), acc);
+    }
+
+    // the bubble: it swells and trembles with the voice, stretches when blown upward, sags when sinking
+    vec2 q = p - c0;
+    float ang = atan2(q.y, q.x);
+    float stretch = 0.14 * ms + 0.10 * up - 0.10 * mc;
+    q = vec2(q.x * (1.0 + 0.5 * stretch), q.y / (1.0 + stretch));
+    float wob = 0.010 * sin(3.0 * ang + t * 1.7) + L * 0.034 * sin(5.0 * ang - t * 7.0) + pk * 0.026 * sin(2.0 * ang + t * 11.0);
+    float flow = t * (0.35 + 1.3 * L);
+    vec4 body = bb_draw(q, R * (1.0 + wob), mc, flow, 1.0, u);
+    return over(body, acc) * (1.0 - u.fade);
+}

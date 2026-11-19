@@ -1,0 +1,39 @@
+(version 1)
+(allow default)
+
+;; Sandbox profile for the bundled OpenAI worker.
+;; Host restriction is NOT claimed here; the remote endpoint is fixed in the
+;; Python worker itself. No generic loose fallback is provided.
+
+;; Deny all writes, then re-allow the only writable literal.
+(deny file-write*)
+(allow file-write* (literal "/dev/null"))
+
+;; Deny file data reads, then re-allow only the required subpaths/literals.
+(deny file-read-data)
+(allow file-read-data
+    ;; libignition opens / as its openat root (system dyld-support.sb).
+    (literal "/")
+    (subpath (param "BACKEND_ROOT"))
+    (subpath (param "ASSET_ROOT"))
+    (subpath "/System/Library")
+    ;; Newer macOS locates the shared runtime cache in the OS Cryptex.
+    (subpath "/System/Cryptexes/OS/System/Library/dyld")
+    (subpath "/System/Volumes/Preboot/Cryptexes/OS/System/Library/dyld")
+    (subpath "/usr/lib")
+    (subpath "/usr/share")
+    (subpath "/private/etc")
+    (subpath "/private/var/db/dyld")
+    (literal "/dev/null")
+    (literal "/dev/random")
+    (literal "/dev/urandom"))
+
+;; No reads from user home, Application Support, or Keychain: they are simply
+;; not re-allowed after the deny above.
+
+;; File metadata remains allowed by default.
+
+;; Process, mach, and system calls keep default behavior so Python TLS and
+;; DNS resolution work. Outbound network is allowed because the cloud worker
+;; requires HTTPS; listeners are explicitly blocked.
+(deny network-inbound)

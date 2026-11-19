@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "status": "passed",
+  "source": "verified_public_cache",
+  "source_version": "7278e1e-8bit-v1",
+  "mlx_version": "0.32.2",
+  "runtime_version": "0.4.0",
+  "dtype": "float16",
+  "bits": 8,
+  "group_size": 64,
+  "reload_verified": true,
+  "parameters": 1398,
+  "quantized_layers": 345,
+  "output_weight_sha256": "ca8ab8ae3a99be685ad1a882b56cb019dbd4d44e76e0cd83072bd20b0df46f67",
+  "output_weight_bytes": 2500516700,
+  "input_files": 11,
+  "output_files": 12,
+  "execution_session": 19555
+}

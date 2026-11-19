@@ -1,0 +1,369 @@
+[
+  {
+    "id": "apple-speech",
+    "label": "Apple SpeechTranscriber",
+    "summary": "macOS 原生语音识别，由宿主接入",
+    "backend": "apple_speech",
+    "host": "native",
+    "correction": "none",
+    "streaming_kind": "native",
+    "max_seconds": 60,
+    "initial_seconds": 0,
+    "interval_seconds": 0.5,
+    "experimental": false,
+    "required_files": [],
+    "languages": [
+      "auto",
+      "zh",
+      "en",
+      "yue"
+    ],
+    "required_modules": []
+  },
+  {
+    "id": "sensevoice",
+    "label": "SenseVoice",
+    "summary": "本地离线最终识别，停止后返回",
+    "backend": "sensevoice",
+    "correction": "none",
+    "streaming_kind": "offline",
+    "max_seconds": 60,
+    "initial_seconds": 60,
+    "interval_seconds": 0,
+    "experimental": false,
+    "required_files": [
+      "asr-lab/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx",
+      "asr-lab/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt"
+    ],
+    "languages": [
+      "auto",
+      "zh",
+      "en",
+      "yue"
+    ],
+    "required_modules": [
+      "numpy",
+      "sherpa_onnx"
+    ]
+  },
+  {
+    "id": "qwen06-rolling",
+    "label": "Qwen3-ASR 0.6B",
+    "summary": "完整前缀滚动实验，不是原生流式",
+    "backend": "qwen_rolling",
+    "correction": "none",
+    "streaming_kind": "rolling",
+    "max_seconds": 30,
+    "initial_seconds": 1.5,
+    "interval_seconds": 0.5,
+    "experimental": false,
+    "required_files": [
+      "asr-lab/models/Qwen3-ASR-0.6B-5eb1441/config.json",
+      "asr-lab/models/Qwen3-ASR-0.6B-5eb1441/model.safetensors",
+      "asr-lab/models/Qwen3-ASR-0.6B-5eb1441/preprocessor_config.json",
+      "asr-lab/models/Qwen3-ASR-0.6B-5eb1441/tokenizer_config.json",
+      "asr-lab/models/Qwen3-ASR-0.6B-5eb1441/vocab.json",
+      "asr-lab/models/Qwen3-ASR-0.6B-5eb1441/merges.txt",
+      "asr-lab/models/Qwen3-ASR-0.6B-5eb1441/chat_template.json"
+    ],
+    "languages": [
+      "auto",
+      "zh",
+      "en",
+      "yue"
+    ],
+    "required_modules": [
+      "numpy",
+      "mlx",
+      "mlx_qwen3_asr"
+    ]
+  },
+  {
+    "id": "qwen17-rolling",
+    "label": "Qwen3-ASR 1.7B",
+    "summary": "完整前缀滚动对照",
+    "backend": "qwen_rolling",
+    "correction": "none",
+    "streaming_kind": "rolling",
+    "max_seconds": 30,
+    "initial_seconds": 1.5,
+    "interval_seconds": 0.5,
+    "experimental": false,
+    "required_files": [
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/config.json",
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/preprocessor_config.json",
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/tokenizer_config.json",
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/vocab.json",
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/merges.txt",
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/chat_template.json",
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/model.safetensors.index.json",
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/model-00001-of-00002.safetensors",
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/model-00002-of-00002.safetensors"
+    ],
+    "languages": [
+      "auto",
+      "zh",
+      "en",
+      "yue"
+    ],
+    "required_modules": [
+      "numpy",
+      "mlx",
+      "mlx_qwen3_asr"
+    ]
+  },
+  {
+    "id": "zipformer",
+    "label": "Zipformer",
+    "summary": "Sherpa-ONNX 中英在线识别",
+    "backend": "zipformer",
+    "correction": "none",
+    "streaming_kind": "native",
+    "max_seconds": 60,
+    "initial_seconds": 0,
+    "interval_seconds": 0.5,
+    "experimental": false,
+    "required_files": [
+      "asr-lab/models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/encoder-epoch-99-avg-1.int8.onnx",
+      "asr-lab/models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/decoder-epoch-99-avg-1.onnx",
+      "asr-lab/models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/joiner-epoch-99-avg-1.int8.onnx",
+      "asr-lab/models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/tokens.txt",
+      "asr-lab/models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/bpe.vocab"
+    ],
+    "languages": [
+      "auto",
+      "zh",
+      "en"
+    ],
+    "required_modules": [
+      "numpy",
+      "sherpa_onnx"
+    ]
+  },
+  {
+    "id": "zipformer-small",
+    "label": "Zipformer Small",
+    "summary": "小模型，优先官方 fp32 decoder",
+    "backend": "zipformer",
+    "correction": "none",
+    "streaming_kind": "native",
+    "max_seconds": 60,
+    "initial_seconds": 0,
+    "interval_seconds": 0.5,
+    "experimental": false,
+    "required_files": [
+      "asr-lab/models/zipformer-small-bilingual-2023-02-16-e238275/encoder-epoch-99-avg-1.int8.onnx",
+      "asr-lab/models/zipformer-small-bilingual-2023-02-16-e238275/decoder-epoch-99-avg-1.onnx",
+      "asr-lab/models/zipformer-small-bilingual-2023-02-16-e238275/joiner-epoch-99-avg-1.int8.onnx",
+      "asr-lab/models/zipformer-small-bilingual-2023-02-16-e238275/tokens.txt",
+      "asr-lab/models/zipformer-small-bilingual-2023-02-16-e238275/bpe.vocab"
+    ],
+    "languages": [
+      "auto",
+      "zh",
+      "en"
+    ],
+    "required_modules": [
+      "numpy",
+      "sherpa_onnx"
+    ]
+  },
+  {
+    "id": "paraformer",
+    "label": "Paraformer",
+    "summary": "Sherpa-ONNX 中英在线识别",
+    "backend": "paraformer",
+    "correction": "none",
+    "streaming_kind": "native",
+    "max_seconds": 60,
+    "initial_seconds": 0,
+    "interval_seconds": 0.5,
+    "experimental": false,
+    "required_files": [
+      "asr-lab/models/sherpa-onnx-streaming-paraformer-bilingual-zh-en/encoder.int8.onnx",
+      "asr-lab/models/sherpa-onnx-streaming-paraformer-bilingual-zh-en/decoder.int8.onnx",
+      "asr-lab/models/sherpa-onnx-streaming-paraformer-bilingual-zh-en/tokens.txt"
+    ],
+    "languages": [
+      "auto",
+      "zh",
+      "en"
+    ],
+    "required_modules": [
+      "numpy",
+      "sherpa_onnx"
+    ]
+  },
+  {
+    "id": "nemotron",
+    "label": "Nemotron 3.5",
+    "summary": "NeMo Speech C ABI streaming 候选",
+    "backend": "nemotron",
+    "correction": "none",
+    "streaming_kind": "native",
+    "max_seconds": 60,
+    "initial_seconds": 0,
+    "interval_seconds": 0.5,
+    "experimental": false,
+    "required_files": [
+      "asr-lab/models/nemotron-3.5-asr-streaming-0.6b-1c8deae/nemotron-3.5-asr-streaming-0.6b.q8_0.gguf",
+      ".cache/runtimes/nemo-speech-0.1.0/nemo-speech/lib/libnemo_speech_asr_c.1.dylib",
+      ".cache/runtimes/nemo-speech-0.1.0/nemo-speech/include/nemo_speech/asr.h"
+    ],
+    "languages": [
+      "auto",
+      "zh",
+      "en"
+    ],
+    "required_modules": [
+      "numpy"
+    ]
+  },
+  {
+    "id": "moss-transcribe-diarize",
+    "label": "MOSS-Transcribe-Diarize 0.9B",
+    "summary": "本地离线最终识别，保留原始时间戳和说话人标签",
+    "backend": "moss_transcribe_diarize",
+    "correction": "none",
+    "streaming_kind": "offline",
+    "max_seconds": 60,
+    "initial_seconds": 60,
+    "interval_seconds": 0,
+    "experimental": true,
+    "required_files": [
+      "asr-lab/vendor/MOSS-Transcribe-Diarize/moss_transcribe_diarize/transcript_parser.py",
+      "asr-lab/models/MOSS-Transcribe-Diarize-704aa4a/added_tokens.json",
+      "asr-lab/models/MOSS-Transcribe-Diarize-704aa4a/chat_template.jinja",
+      "asr-lab/models/MOSS-Transcribe-Diarize-704aa4a/config.json",
+      "asr-lab/models/MOSS-Transcribe-Diarize-704aa4a/configuration_moss_transcribe_diarize.py",
+      "asr-lab/models/MOSS-Transcribe-Diarize-704aa4a/generation_config.json",
+      "asr-lab/models/MOSS-Transcribe-Diarize-704aa4a/merges.txt",
+      "asr-lab/models/MOSS-Transcribe-Diarize-704aa4a/model-00000-of-00001.safetensors",
+      "asr-lab/models/MOSS-Transcribe-Diarize-704aa4a/model.safetensors.index.json",
+      "asr-lab/models/MOSS-Transcribe-Diarize-704aa4a/modeling_moss_transcribe_diarize.py",
+      "asr-lab/models/MOSS-Transcribe-Diarize-704aa4a/preprocessor_config.json",
+      "asr-lab/models/MOSS-Transcribe-Diarize-704aa4a/processing_moss_transcribe_diarize.py",
+      "asr-lab/models/MOSS-Transcribe-Diarize-704aa4a/processor_config.json",
+      "asr-lab/models/MOSS-Transcribe-Diarize-704aa4a/special_tokens_map.json",
+      "asr-lab/models/MOSS-Transcribe-Diarize-704aa4a/tokenizer.json",
+      "asr-lab/models/MOSS-Transcribe-Diarize-704aa4a/tokenizer_config.json",
+      "asr-lab/models/MOSS-Transcribe-Diarize-704aa4a/vocab.json"
+    ],
+    "languages": [
+      "auto",
+      "zh",
+      "en",
+      "yue"
+    ],
+    "required_modules": [
+      "numpy",
+      "torch",
+      "transformers",
+      "safetensors"
+    ]
+  },
+  {
+    "id": "zipformer-sensevoice",
+    "label": "Zipformer + SenseVoice",
+    "summary": "8 秒固定段，第二遍重听原音频纠错；草稿中英，硬分段实验",
+    "backend": "two_pass",
+    "correction": "sensevoice",
+    "streaming_kind": "native",
+    "max_seconds": 60,
+    "initial_seconds": 0,
+    "interval_seconds": 0.5,
+    "experimental": true,
+    "required_files": [
+      "asr-lab/models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/encoder-epoch-99-avg-1.int8.onnx",
+      "asr-lab/models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/decoder-epoch-99-avg-1.onnx",
+      "asr-lab/models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/joiner-epoch-99-avg-1.int8.onnx",
+      "asr-lab/models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/tokens.txt",
+      "asr-lab/models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/bpe.vocab",
+      "asr-lab/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/model.int8.onnx",
+      "asr-lab/models/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-int8-2024-07-17/tokens.txt"
+    ],
+    "languages": [
+      "auto",
+      "zh",
+      "en",
+      "yue"
+    ],
+    "required_modules": [
+      "numpy",
+      "sherpa_onnx"
+    ]
+  },
+  {
+    "id": "zipformer-qwen17",
+    "label": "Zipformer + Qwen 1.7B",
+    "summary": "8 秒固定段，第二遍重听原音频纠错；草稿中英，硬分段实验",
+    "backend": "two_pass",
+    "correction": "qwen17",
+    "streaming_kind": "native",
+    "max_seconds": 60,
+    "initial_seconds": 0,
+    "interval_seconds": 0.5,
+    "experimental": true,
+    "required_files": [
+      "asr-lab/models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/encoder-epoch-99-avg-1.int8.onnx",
+      "asr-lab/models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/decoder-epoch-99-avg-1.onnx",
+      "asr-lab/models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/joiner-epoch-99-avg-1.int8.onnx",
+      "asr-lab/models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/tokens.txt",
+      "asr-lab/models/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20/bpe.vocab",
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/config.json",
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/preprocessor_config.json",
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/tokenizer_config.json",
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/vocab.json",
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/merges.txt",
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/chat_template.json",
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/model.safetensors.index.json",
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/model-00001-of-00002.safetensors",
+      "asr-lab/models/Qwen3-ASR-1.7B-7278e1e/model-00002-of-00002.safetensors"
+    ],
+    "languages": [
+      "auto",
+      "zh",
+      "en",
+      "yue"
+    ],
+    "required_modules": [
+      "numpy",
+      "sherpa_onnx",
+      "mlx",
+      "mlx_qwen3_asr"
+    ]
+  },
+  {
+    "id": "qwen06-incremental",
+    "label": "Qwen3-ASR 0.6B 增量实验",
+    "summary": "社区增量接口，碎片错误风险明确",
+    "backend": "qwen_incremental",
+    "correction": "none",
+    "streaming_kind": "incremental",
+    "max_seconds": 30,
+    "initial_seconds": 0.5,
+    "interval_seconds": 0.5,
+    "experimental": true,
+    "required_files": [
+      "asr-lab/models/Qwen3-ASR-0.6B-5eb1441/config.json",
+      "asr-lab/models/Qwen3-ASR-0.6B-5eb1441/model.safetensors",
+      "asr-lab/models/Qwen3-ASR-0.6B-5eb1441/preprocessor_config.json",
+      "asr-lab/models/Qwen3-ASR-0.6B-5eb1441/tokenizer_config.json",
+      "asr-lab/models/Qwen3-ASR-0.6B-5eb1441/vocab.json",
+      "asr-lab/models/Qwen3-ASR-0.6B-5eb1441/merges.txt",
+      "asr-lab/models/Qwen3-ASR-0.6B-5eb1441/chat_template.json"
+    ],
+    "languages": [
+      "auto",
+      "zh",
+      "en",
+      "yue"
+    ],
+    "required_modules": [
+      "numpy",
+      "mlx",
+      "mlx_qwen3_asr"
+    ]
+  }
+]
+
