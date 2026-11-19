@@ -8,7 +8,7 @@
 
 ## 下载
 
-[下载体验版](https://github.com/kenyupersonal-maker/voicepointer-oss/releases/latest) · Apple 芯片 Mac，macOS 14 或更新版本。解压后将咻拖进「应用程序」，按应用引导开启所需权限。体验版使用本地开发签名，首次启动可能被 macOS 拦下。[Apple 的说明](https://support.apple.com/zh-cn/102445)
+[下载体验版](https://github.com/kenyupersonal-maker/voicepointer-oss/releases/tag/v0.5.105) · Apple 芯片 Mac，macOS 14 或更新版本。解压后将咻拖进「应用程序」，按应用引导开启所需权限。体验版使用本地开发签名，首次启动可能被 macOS 拦下。[Apple 的说明](https://support.apple.com/zh-cn/102445)
 
 ## 打赏
 
